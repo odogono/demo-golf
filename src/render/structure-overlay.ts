@@ -10,7 +10,7 @@ import type { Structure } from "../structure/structure";
 export function createStructureOverlay(structure: Structure) {
   const mesh = new THREE.InstancedMesh(
     new THREE.BoxGeometry(0.9, 0.9, 0.9),
-    // Drawn over the placeholder meshes, which would otherwise hide it.
+    // Drawn over the Buildings' meshes, which would otherwise hide it.
     new THREE.MeshBasicMaterial({ wireframe: true, depthTest: false }),
     structure.count,
   );

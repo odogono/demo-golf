@@ -38,13 +38,17 @@ export function createShotView(scene: THREE.Scene, container: HTMLElement, tee: 
   meter.appendChild(fill);
   const label = document.createElement("div");
   label.style.cssText =
-    "position:fixed;left:60px;bottom:24px;color:#fff;font:14px/1.4 system-ui;text-shadow:0 1px 2px #000";
+    "position:fixed;left:60px;bottom:24px;color:#fff;font:14px/1.4 system-ui;text-shadow:0 1px 2px #000;white-space:pre-line";
   container.append(meter, label);
 
   return {
     setBallType(type: BallType) {
       material.color.setHex(type.colour);
       ball.scale.setScalar(type.radius);
+    },
+    /** Hides the ball once an explosive ball has gone off. */
+    setBallVisible(visible: boolean) {
+      ball.visible = visible;
     },
     setBallPosition(p: Vec3) {
       ball.position.set(p[0], p[1], p[2]);

@@ -4,19 +4,23 @@ import {
   addBroadphaseLayer,
   addObjectLayer,
   box,
+  compound,
   createCollisionEstimationResult,
   createWorld,
   createWorldSettings,
   enableCollision,
   estimateCollisionResponse,
   getWorldSpaceContactPointOnA,
+  getWorldSpaceContactPointOnB,
   registerAll,
   rigidBody,
   sphere,
+  staticCompound,
   updateWorld,
   type ContactManifold,
   type Listener,
   type RigidBody,
+  type Shape,
 } from "crashcat";
 import { type Quat, type Vec3, vec3 } from "math";
 import type {
@@ -37,29 +41,45 @@ const MOTION: Record<MotionKind, MotionType> = {
   kinematic: MotionType.KINEMATIC,
 };
 
-function createShape(desc: ShapeDesc) {
+function createShape(desc: ShapeDesc, motion: MotionKind): Shape {
   switch (desc.kind) {
     case "box":
       return box.create({ halfExtents: [...desc.halfExtents] });
     case "sphere":
       return sphere.create({ radius: desc.radius });
+    case "compound": {
+      const children = desc.children.map((child) => ({
+        shape: createShape(child.shape, motion),
+        position: [...child.position] as Vec3,
+        quaternion: (child.rotation ? [...child.rotation] : [0, 0, 0, 1]) as Quat,
+      }));
+      return motion === "static" ? staticCompound.create({ children }) : compound.create({ children });
+    }
   }
 }
 
+const scratch: Vec3 = [0, 0, 0];
+
 /**
  * Crashcat's CCD pass reports its normal pointing from B to A, the opposite
- * of narrowphase contacts. A newly added contact whose bodies separate along
- * the normal, involving a CCD body, came from that pass. See NOTES.md.
+ * of narrowphase contacts. A correct normal points out of A's surface and into
+ * B's, so on a convex CCD body (the ball) it points away from A's centre of
+ * mass, or towards B's. See NOTES.md.
  */
 function hasReversedCcdNormal(a: RigidBody, b: RigidBody, manifold: ContactManifold) {
   const ccd = (body: RigidBody) =>
     body.motionType === MotionType.DYNAMIC &&
     body.motionProperties.motionQuality === MotionQuality.LINEAR_CAST;
-  if (!ccd(a) && !ccd(b)) return false;
-  const va = a.motionProperties.linearVelocity;
-  const vb = b.motionProperties.linearVelocity;
   const n = manifold.worldSpaceNormal;
-  return (vb[0] - va[0]) * n[0] + (vb[1] - va[1]) * n[1] + (vb[2] - va[2]) * n[2] > 0;
+  if (ccd(a)) {
+    getWorldSpaceContactPointOnA(scratch, manifold, 0);
+    return vec3.dot(vec3.subtract(scratch, scratch, a.centerOfMassPosition), n) < 0;
+  }
+  if (ccd(b)) {
+    getWorldSpaceContactPointOnB(scratch, manifold, 0);
+    return vec3.dot(vec3.subtract(scratch, b.centerOfMassPosition, scratch), n) < 0;
+  }
+  return false;
 }
 
 export function createCrashcatWorld(gravity: Vec3 = [0, -9.81, 0]): PhysicsWorld {
@@ -125,7 +145,7 @@ export function createCrashcatWorld(gravity: Vec3 = [0, -9.81, 0]): PhysicsWorld
   return {
     addBody(desc: BodyDesc): BodyId {
       const created = rigidBody.create(world, {
-        shape: createShape(desc.shape),
+        shape: createShape(desc.shape, desc.motion),
         motionType: MOTION[desc.motion],
         objectLayer: desc.motion === "static" ? notMoving : moving,
         position: desc.position ? [...desc.position] : undefined,
