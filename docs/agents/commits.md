@@ -52,7 +52,7 @@ Versions are semver, `0.x.y` until the game is complete. To release:
 
 ## Checking locally
 
-To check a PR the way CI does, run:
+Write the changelog fragment before running this: the check fails a `feat`, `fix` or `perf` title without one. To check a PR the way CI does, run:
 
 ```sh
 PR_TITLE="feat(game): Add x" BASE_REF=main bun tools/commits/check.ts pr

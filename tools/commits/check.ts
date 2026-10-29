@@ -41,7 +41,9 @@ const checkMessage = (file: string): string[] => {
 const checkPullRequest = (): string[] => {
   const title = process.env.PR_TITLE ?? '';
   const body = process.env.PR_BODY ?? '';
-  const base = process.env.BASE_REF || 'main';
+  // CI passes a bare branch name; accept `origin/main` too, since that's what
+  // people reach for locally.
+  const base = (process.env.BASE_REF || 'main').replace(/^origin\//, '');
   const parsed = parseCommitSubject(title);
   if ('errors' in parsed) {
     return parsed.errors.map(error => `PR title: ${error}`);

@@ -2,8 +2,8 @@ import GUI from "lil-gui";
 import { vec3, type Vec3 } from "math";
 import { createCameraDirector } from "./camera/director";
 import { DEFAULT_CAMERA_FX, createShake, createSlowMotion, hitsSoon, shakeAmount, type Box } from "./camera/fx";
-import { DEFAULT_RIGS } from "./camera/rigs";
-import { createBuildings, type BlastOutcome, type StructurePort } from "./damage/buildings";
+import { DEFAULT_RIGS, type Pose } from "./camera/rigs";
+import { createBuildings, type Blast, type BlastOutcome, type StructurePort } from "./damage/buildings";
 import { createCollapse, DEFAULT_COLLAPSE } from "./damage/collapse";
 import { createDamage, DEFAULT_DAMAGE } from "./damage/damage";
 import { createDebris } from "./damage/debris";
@@ -349,7 +349,34 @@ rig.renderer.setAnimationLoop((now) => {
     ball: inFlight ? shown : undefined,
     velocity: inFlight ? velocity : undefined,
   });
-  cameraView.update(pose, shake.update(shakeOffset, Math.min(elapsed, 0.1)));
+  cameraView.update(pinnedPose ?? pose, shake.update(shakeOffset, Math.min(elapsed, 0.1)));
 
   rig.renderer.render(rig.scene, rig.camera);
 });
+
+/** Set by `__golf.look`: holds the camera still instead of following the director. */
+let pinnedPose: Pose | undefined;
+
+/**
+ * A debug hook for scripted runs: `bun run shoot` (tools/shoot.ts) drives the
+ * game through it rather than through the keyboard.
+ */
+(window as unknown as { __golf: unknown }).__golf = {
+  /** Blasts a Building directly, as if a ball had hit `center`. */
+  blast(center: Vec3, radius: number, power: number, building = 0, outward: Vec3 = [1, 0, 0]) {
+    const blast: Blast = { center, radius, power, outward };
+    buildings.blast(buildings.list[building]!, blast);
+    dust.puff(center, outward, 80, 2.5);
+  },
+  /** Fires the current ball at `power` (0–1) along the current aim. */
+  shoot,
+  /** Pins the camera at `position` looking at `target`; call with no arguments to release it. */
+  look(position?: Vec3, target?: Vec3, fov = 50) {
+    pinnedPose = position && target ? { position, target, fov } : undefined;
+  },
+  /** Hides the debug GUI, for clean frames. */
+  hideUi() {
+    for (const el of document.querySelectorAll<HTMLElement>(".lil-gui")) el.style.display = "none";
+  },
+  rebuild,
+};

@@ -1,10 +1,16 @@
 # AGENTS.md
 
+## Navigation
+
+- **Code map**: `README.md` says which `src/` folder owns what. Read it before reading source.
+- **Crashcat or `math`**: read `docs/physics-api.md` before searching `node_modules`.
+- **Seeing the game**: `bun run shoot --help` captures screenshots and GIFs headlessly.
+
 ## Agent skills
 
 ### Issue tracker
 
-Issues are tracked in GitHub Issues for `odogono/demo-golf` (via the `gh` CLI). See `docs/agents/issue-tracker.md`.
+Issues are tracked in GitHub Issues for `odogono/demo-golf` (via the `gh` CLI). Read one with `gh issue view <n> --json title,body,labels,comments`; `--comments` prints nothing. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
