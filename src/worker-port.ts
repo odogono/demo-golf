@@ -31,5 +31,10 @@ export function inlinePort<Request, Reply>(handle: (request: Request) => Reply |
  * as `<name>.worker.js` beside the page.
  */
 export function startWorker(name: string): Worker {
-  return new Worker(new URL(`${name}.worker.js`, document.baseURI), { type: "module" });
+  const url = new URL(`${name}.worker.js`, document.baseURI);
+  if (typeof WORKER_VERSION === "string") url.searchParams.set("v", WORKER_VERSION);
+  return new Worker(url, { type: "module" });
 }
+
+/** Set by `build.ts` to a hash of the built workers; undefined under `bun dev`. */
+declare const WORKER_VERSION: string | undefined;
