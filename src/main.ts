@@ -269,6 +269,7 @@ gui.add(damage.settings, "explosivePower", 0, 600, 10).name("Explosive power");
 gui.add(tuning, "cellStrength", 10, 500, 10).name("Cell strength").onFinishChange(rebuild);
 gui.add(tuning, "tipMargin", 0, 3, 0.05).name("Tipping margin (m)").onFinishChange(rebuild);
 gui.add(debris, "cap", 10, 400, 10).name("Body cap");
+gui.add(rig.ao, "enabled").name("Ambient occlusion");
 const collapseGui = gui.addFolder("Collapse");
 collapseGui.add(collapse.settings, "powerPerImpulse", 0, 0.1, 0.001).name("Fragment power / impulse");
 collapseGui.add(collapse.settings, "hitRadius", 0.5, 4, 0.1).name("Fragment Blast radius");
@@ -359,7 +360,7 @@ rig.renderer.setAnimationLoop((now) => {
   });
   cameraView.update(pinnedPose ?? pose, shake.update(shakeOffset, Math.min(elapsed, 0.1)));
 
-  rig.renderer.render(rig.scene, rig.camera);
+  rig.render();
 });
 
 /** Set by `__golf.look`: holds the camera still instead of following the director. */
