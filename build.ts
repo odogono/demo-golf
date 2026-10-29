@@ -8,6 +8,8 @@ const result = await Bun.build({
   target: "browser",
   minify: true,
   sourcemap: "linked",
+  // GitHub Pages serves the build from /demo-golf/ (.github/workflows/pages.yml).
+  publicPath: process.env.GOLF_BASE,
 });
 
 if (!result.success) {
