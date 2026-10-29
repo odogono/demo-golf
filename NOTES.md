@@ -21,6 +21,8 @@
 
 - `math` (pmndrs) is used for vectors, quaternions and geometry everywhere outside `render/` and `fx/`. Three.js types appear only in `render/` and `fx/`.
 - Record any gaps in `math` here.
+- `quickhull2` is exported from `math/geometry`, not the root `math` entry.
+- **Gap:** `polygon2` has `containsPoint` but no signed distance from a point to a polygon's edge, nor a way to inset a polygon. The Structure's Tip check needs both for its safety margin, so `src/structure/structure.ts` finds the nearest hull edge itself.
 
 ## Performance
 
