@@ -398,8 +398,17 @@ export function createStructure(options: StructureOptions) {
             crushed.push(...failed);
           }
           if (crushed.length > 0) {
-            const falling = detachIslands().flat();
+            // Only islands wholly above the crushed layer pancake onto it. One
+            // reaching down past it, like a slab that hung from the layer, has
+            // nothing to land on there, so it falls free as a Detach.
+            const falling: number[] = [];
+            const free: number[][] = [];
+            for (const island of detachIslands()) {
+              if (island.every((i) => coords(i)[1] > y)) falling.push(...island);
+              else free.push(island);
+            }
             events.push({ kind: "crush", layer: y, crushed, falling });
+            for (const cells of free) events.push({ kind: "detach", cells });
             continue layers;
           }
         }

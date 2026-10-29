@@ -80,6 +80,19 @@ describe("load cascade", () => {
     expect(events[0]).toMatchObject({ kind: "crush", layer: 1, crushed: [i] });
     expect(s.height()).toBe(1);
   });
+  test("Cells left hanging under a Crushed layer Detach rather than pancake in mid-air", () => {
+    const s = target();
+    // Takes out the slab at 16 and the tops of the pillars under it, so what is
+    // left of that floor hangs from the roof, then Crushes the roof.
+    s.applyBlast([2.2, 16, 2], 3.9, 516);
+    const events = s.evaluate();
+    const crush = events.find((e) => e.kind === "crush" && e.layer === 19);
+    expect(crush).toBeDefined();
+    for (const e of events) {
+      if (e.kind === "crush") for (const i of e.falling) expect(s.coords(i)[1]).toBeGreaterThan(e.layer);
+    }
+    expect(events.some((e) => e.kind === "detach" && e.cells.some((i) => s.coords(i)[1] < 19))).toBe(true);
+  });
 });
 
 describe("tipping", () => {
