@@ -8,6 +8,7 @@
 - Never remove a body inside a listener callback. Queue the removal and do it after `updateWorld`.
 - Body objects are pooled, so keep `body.id` and look bodies up with `rigidBody.get`.
 - In a test drop, a resting box sank about 2 cm into the floor. Watch for this.
+- Crashcat damps linear velocity by 0.05 per second unless a body sets `linearDamping`. The ball sets it from its type's `drag`, and the trajectory preview applies the same damping so the two agree.
 - Without CCD, a golf ball (r = 0.021 m) at 60 m/s tunnels through a 0.2 m wall at most wall offsets. With `LINEAR_CAST` it never does (`test/physics/crashcat.test.ts`).
 
 ## Workarounds

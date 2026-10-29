@@ -133,6 +133,7 @@ export function createCrashcatWorld(gravity: Vec3 = [0, -9.81, 0]): PhysicsWorld
         mass: desc.mass,
         friction: desc.friction,
         restitution: desc.restitution,
+        linearDamping: desc.linearDamping,
         motionQuality: desc.ccd ? MotionQuality.LINEAR_CAST : MotionQuality.DISCRETE,
       });
       if (desc.linearVelocity) rigidBody.setLinearVelocity(world, created, [...desc.linearVelocity]);

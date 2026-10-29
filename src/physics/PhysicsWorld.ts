@@ -22,6 +22,8 @@ export type BodyDesc = {
   mass?: number;
   friction?: number;
   restitution?: number;
+  /** Fraction of linear velocity lost per second; the engine default if omitted. */
+  linearDamping?: number;
   /** Continuous collision detection, for fast bodies such as the ball. */
   ccd?: boolean;
 };
