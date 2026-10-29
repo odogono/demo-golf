@@ -171,6 +171,7 @@ const loop = createFixedLoop((dt) => {
     const big = blast.radius > 2;
     dust.puff(blast.center, blast.outward, big ? 80 : 24, big ? 2.5 : 1);
   }
+  for (const { center, outward } of collapse.drainBursts()) dust.puff(center, outward, 6, 1.5);
   debris.update();
   frameWork += performance.now() - start;
 
@@ -226,7 +227,7 @@ const collapseGui = gui.addFolder("Collapse");
 collapseGui.add(collapse.settings, "powerPerImpulse", 0, 0.1, 0.001).name("Fragment power / impulse");
 collapseGui.add(collapse.settings, "hitRadius", 0.5, 4, 0.1).name("Fragment Blast radius");
 collapseGui.add(collapse.settings, "tipSpin", 0, 2, 0.05).name("Tip spin (rad/s)");
-collapseGui.add(collapse.settings, "crushSeconds", 0.2, 4, 0.1).name("Crush seconds");
+collapseGui.add(collapse.settings, "crushStagger", 0, 1, 0.05).name("Crush floor stagger (s)");
 gui.add({ rebuild }, "rebuild").name("Rebuild buildings");
 const autoGui = gui.addFolder("Auto mode (P)");
 autoGui.add(auto, "enabled").name("Fire automatically");

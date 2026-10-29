@@ -16,8 +16,8 @@ export type CollapseSettings = {
   minImpulse: number;
   /** Radians per second a Tip starts turning at about its pivot edge. */
   tipSpin: number;
-  /** Seconds a Crush takes to pancake. */
-  crushSeconds: number;
+  /** Seconds between one floor of a Crush giving way and the next. */
+  crushStagger: number;
 };
 
 export const DEFAULT_COLLAPSE: CollapseSettings = {
@@ -25,13 +25,17 @@ export const DEFAULT_COLLAPSE: CollapseSettings = {
   powerPerImpulse: 0.02,
   minImpulse: 1500,
   tipSpin: 0.4,
-  crushSeconds: 1.2,
+  crushStagger: 0.25,
 };
 
 /** Seconds after a Fragment's hit before it can cause another. */
 const HIT_COOLDOWN = 0.2;
-/** How tall a pancaked stack ends up, as a fraction of its height. */
-const SQUASH = 0.3;
+const GRAVITY = 9.81;
+/**
+ * Most Debris a Crush throws from its pillars, shared between them. More would
+ * hit the body cap, which freezes the oldest pieces into Rubble mid-air.
+ */
+const CRUSH_DEBRIS = 40;
 
 /** A piece of a Building, in the Building's grid. `mask` marks its Cells. */
 type Piece = { building: Building; cells: number[]; mask: Uint8Array };
@@ -51,27 +55,46 @@ export type Fragment = Piece & {
   lastHit: number;
 };
 
+/** A floor slab of a Crush. It falls rigidly from `start`, `drop` metres, onto the slab below. */
+export type Slab = { building: Building; mask: Uint8Array; start: number; drop: number };
+
 /**
- * A Crush: the Cells above a crushed layer, pancaking down onto it over
- * `crushSeconds` as a scripted animation. They span grid layers `top` and
- * below, down to `base`, and land on `base - 1`. When it ends they become
+ * A Crush, as a scripted animation: from the bottom up, each storey's pillars
+ * blow out and the slab they held falls onto the stack below, one floor
+ * every `crushStagger` seconds. When the last slab lands, the stack becomes
  * Rubble with a static body.
  */
-export type Pancake = Piece & {
-  base: number;
-  /** 0 to 1 through the animation. */
-  progress: number;
+export type Pancake = {
+  building: Building;
+  slabs: Slab[];
+  /** Pillar Cells, each with the time it blows out. */
+  pillars: { cell: number; start: number }[];
+  time: number;
+  done: boolean;
   body: BodyId | undefined;
 };
 
+/** Metres a slab has fallen `t` seconds after it starts, landing after `drop`. */
+export function slabFall(slab: Slab, t: number): number {
+  const s = Math.max(0, t - slab.start);
+  return Math.min(slab.drop, 0.5 * GRAVITY * s * s);
+}
+
 /**
  * Carries out the events of each Structure (ADR 0001): Detach and Tip split
- * their Cells off into Fragments, Crush plays a pancake. A Fragment that hits
+ * their Cells off into Fragments, Crush blows out the pillars and drops the floors. A Fragment that hits
  * another Building sets off a Blast on its Structure, scaled by the impulse.
  */
-export function createCollapse(world: PhysicsWorld, buildings: Buildings, debris: Debris, settings: CollapseSettings) {
+export function createCollapse(
+  world: PhysicsWorld,
+  buildings: Buildings,
+  debris: Debris,
+  settings: CollapseSettings,
+  random = Math.random,
+) {
   const fragments: Fragment[] = [];
   const pancakes: Pancake[] = [];
+  const bursts: { center: Vec3; outward: Vec3 }[] = [];
   const contacts: ContactEvent[] = [];
   world.onContact((event) => contacts.push(event));
   let time = 0;
@@ -170,16 +193,56 @@ export function createCollapse(world: PhysicsWorld, buildings: Buildings, debris
     fragment.rubble = true;
   }
 
-  function settle(pancake: Pancake) {
-    const height = (y: number) => pancake.base - 1 + (y - pancake.base) * SQUASH;
-    const children = structureColliders(pancake.building.structure, pancake.mask).map(({ shape, position }) => {
-      if (shape.kind !== "box") throw new Error("expected boxes");
-      const [hx, hy, hz] = shape.halfExtents;
-      return {
-        shape: { kind: "box" as const, halfExtents: [hx, hy * SQUASH, hz] as Vec3 },
-        position: [position[0], height(position[1]), position[2]] as Vec3,
-      };
+  /**
+   * Splits a Crush's falling Cells into slabs and pillars. A layer with at
+   * least half as many Cells as the fullest is a slab; the rest are pillars.
+   * Slab `n`, counting up from the lowest, lands with its bottom `n` metres
+   * above the crushed layer's.
+   */
+  function pancake(building: Building, layer: number, falling: number[]): Pancake {
+    const { structure } = building;
+    const byLayer = new Map<number, number[]>();
+    for (const i of falling) {
+      const y = structure.coords(i)[1];
+      byLayer.set(y, [...(byLayer.get(y) ?? []), i]);
+    }
+    const fullest = Math.max(...[...byLayer.values()].map((cells) => cells.length));
+    const slabLayers = [...byLayer.keys()].filter((y) => byLayer.get(y)!.length * 2 >= fullest).sort((a, b) => a - b);
+    const slabs = slabLayers.map((y, n) => {
+      const mask = new Uint8Array(structure.count);
+      for (const i of byLayer.get(y)!) mask[i] = 1;
+      return { building, mask, start: n * settings.crushStagger, drop: Math.max(0, y - (layer + n)) };
     });
+    const pillars: Pancake["pillars"] = [];
+    for (const [y, cells] of byLayer) {
+      if (slabLayers.includes(y)) continue;
+      // A pillar blows out as the slab it holds up starts to fall.
+      const above = slabLayers.findIndex((s) => s > y);
+      const start = slabs[above < 0 ? slabs.length - 1 : above]?.start ?? 0;
+      for (const cell of cells) pillars.push({ cell, start });
+    }
+    return { building, slabs, pillars, time: 0, done: false, body: undefined };
+  }
+
+  function blowOut(building: Building, cell: number, share: number) {
+    const { origin, size } = building.structure;
+    const centre = building.structure.cellCenter(vec3.create(), cell);
+    const out = vec3.normalize(vec3.create(), [
+      centre[0] - (origin[0] + size[0] / 2),
+      0.2,
+      centre[2] - (origin[2] + size[2] / 2),
+    ]);
+    if (random() < share) debris.spawn(centre, out, 1);
+    bursts.push({ center: centre, outward: out });
+  }
+
+  function settle(pancake: Pancake) {
+    const children = pancake.slabs.flatMap((slab) =>
+      structureColliders(slab.building.structure, slab.mask).map(({ shape, position }) => ({
+        shape,
+        position: [position[0], position[1] - slab.drop, position[2]] as Vec3,
+      })),
+    );
     if (children.length > 0) {
       pancake.body = world.addBody({
         shape: { kind: "compound", children },
@@ -193,6 +256,10 @@ export function createCollapse(world: PhysicsWorld, buildings: Buildings, debris
     settings,
     fragments: fragments as readonly Fragment[],
     pancakes: pancakes as readonly Pancake[],
+    /** Where pillars have blown out since the last call, for dust. */
+    drainBursts() {
+      return bursts.splice(0);
+    },
 
     /** Fragments still simulated. */
     get moving() {
@@ -203,10 +270,7 @@ export function createCollapse(world: PhysicsWorld, buildings: Buildings, debris
     apply({ building, reply }: BlastOutcome) {
       for (const event of reply.events) {
         if (event.kind !== "crush") split(building, event);
-        else if (event.falling.length > 0) {
-          const base = Math.min(...event.falling.map((i) => building.structure.coords(i)[1]));
-          pancakes.push({ ...piece(building, event.falling), base, progress: 0, body: undefined });
-        }
+        else if (event.falling.length > 0) pancakes.push(pancake(building, event.layer, event.falling));
       }
     },
 
@@ -250,16 +314,25 @@ export function createCollapse(world: PhysicsWorld, buildings: Buildings, debris
       }
 
       for (const pancake of pancakes) {
-        if (pancake.progress >= 1) continue;
-        pancake.progress = Math.min(1, pancake.progress + dt / settings.crushSeconds);
-        if (pancake.progress === 1) settle(pancake);
+        if (pancake.done) continue;
+        const before = pancake.time;
+        pancake.time += dt;
+        for (const { cell, start } of pancake.pillars) {
+          if (start >= before && start < pancake.time) {
+            blowOut(pancake.building, cell, CRUSH_DEBRIS / pancake.pillars.length);
+          }
+        }
+        if (pancake.slabs.every((slab) => slabFall(slab, pancake.time) >= slab.drop)) {
+          pancake.done = true;
+          settle(pancake);
+        }
       }
       return hits;
     },
 
     /** True while a Crush is still pancaking. */
     get animating() {
-      return pancakes.some((p) => p.progress < 1);
+      return pancakes.some((p) => !p.done);
     },
 
     clear() {
@@ -268,16 +341,9 @@ export function createCollapse(world: PhysicsWorld, buildings: Buildings, debris
       fragments.length = 0;
       pancakes.length = 0;
       contacts.length = 0;
+      bursts.length = 0;
     },
   };
-}
-
-/** How far down a pancake has fallen and squashed at `progress`: its base's drop in metres and its height scale. */
-export function pancakePose(progress: number): { drop: number; scale: number } {
-  // Fall the crushed layer's metre under gravity, then squash the storeys onto each other.
-  const fall = Math.min(1, progress / 0.4);
-  const squash = Math.max(0, (progress - 0.4) / 0.6);
-  return { drop: fall * fall, scale: 1 - (1 - SQUASH) * (1 - (1 - squash) * (1 - squash)) };
 }
 
 export type Collapse = ReturnType<typeof createCollapse>;

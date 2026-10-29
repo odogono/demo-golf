@@ -1,17 +1,17 @@
 import * as THREE from "three";
-import { pancakePose, type Collapse, type Fragment, type Pancake } from "../damage/collapse";
+import { slabFall, type Collapse, type Fragment, type Slab } from "../damage/collapse";
 import { buildingMesh } from "./building-geometry";
 
 /**
- * Draws Fragments on their bodies and plays each Crush's pancake. Each piece
+ * Draws Fragments on their bodies and drops each Crush's slabs. Each piece
  * is meshed from its Cells, without the Bites cut into them, one draw call
  * per piece; they stay drawn once they freeze into Rubble.
  */
 export function createCollapseView(scene: THREE.Scene, collapse: Collapse) {
   const material = new THREE.MeshStandardMaterial({ color: 0xb0aaa0, roughness: 0.9 });
-  const groups = new Map<Fragment | Pancake, THREE.Group>();
+  const groups = new Map<Fragment | Slab, THREE.Group>();
 
-  function add(piece: Fragment | Pancake): THREE.Group {
+  function add(piece: Fragment | Slab): THREE.Group {
     const { structure } = piece.building;
     const { position, normal } = buildingMesh({ size: structure.size, alive: piece.mask, cut: new Map() });
     const geometry = new THREE.BufferGeometry();
@@ -21,9 +21,8 @@ export function createCollapseView(scene: THREE.Scene, collapse: Collapse) {
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    // A Fragment's grid hangs off its body; a pancake squashes toward its base.
+    // A Fragment's grid hangs off its body; a slab's off its Building's origin.
     if ("offset" in piece) mesh.position.set(...piece.offset);
-    else mesh.position.set(0, -piece.base, 0);
     const group = new THREE.Group();
     group.add(mesh);
     scene.add(group);
@@ -33,7 +32,7 @@ export function createCollapseView(scene: THREE.Scene, collapse: Collapse) {
 
   return {
     update() {
-      const live = new Set<Fragment | Pancake>([...collapse.fragments, ...collapse.pancakes]);
+      const live = new Set<Fragment | Slab>([...collapse.fragments, ...collapse.pancakes.flatMap((p) => p.slabs)]);
       for (const [piece, group] of groups) {
         if (live.has(piece)) continue;
         scene.remove(group);
@@ -46,11 +45,11 @@ export function createCollapseView(scene: THREE.Scene, collapse: Collapse) {
         group.quaternion.set(...fragment.rotation);
       }
       for (const pancake of collapse.pancakes) {
-        const group = groups.get(pancake) ?? add(pancake);
         const [ox, oy, oz] = pancake.building.structure.origin;
-        const { drop, scale } = pancakePose(pancake.progress);
-        group.position.set(ox, oy + pancake.base - drop, oz);
-        group.scale.y = scale;
+        for (const slab of pancake.slabs) {
+          const group = groups.get(slab) ?? add(slab);
+          group.position.set(ox, oy - slabFall(slab, pancake.time), oz);
+        }
       }
     },
   };

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Vec3 } from "math";
 import { createBuildings, inlineStructures } from "../src/damage/buildings";
-import { createCollapse, DEFAULT_COLLAPSE, pancakePose } from "../src/damage/collapse";
+import { createCollapse, DEFAULT_COLLAPSE, slabFall } from "../src/damage/collapse";
 import type { Hit } from "../src/damage/damage";
 import { createDebris } from "../src/damage/debris";
 import { createCrashcatWorld } from "../src/physics/crashcat";
@@ -19,7 +19,7 @@ function setup() {
   const debris = createDebris(world, { cap: 150 });
   const collapse = createCollapse(world, buildings, debris, { ...DEFAULT_COLLAPSE });
   const [target, neighbour] = buildings.list as [(typeof buildings.list)[0], (typeof buildings.list)[0]];
-  return { world, buildings, collapse, target, neighbour };
+  return { world, buildings, debris, collapse, target, neighbour };
 }
 
 function blastTarget(env: ReturnType<typeof setup>, center: Vec3, radius: number, power: number) {
@@ -79,26 +79,38 @@ describe("Tip", () => {
 });
 
 describe("Crush", () => {
-  test("crushing a middle floor pancakes the floors above, then leaves Rubble", () => {
+  test("crushing a middle floor blows out the pillars and stacks the slabs above, then leaves Rubble", () => {
     const env = setup();
     blastTarget(env, [3, 10, -10], 5, 2000);
     expect(env.collapse.fragments).toHaveLength(0);
     expect(env.collapse.pancakes).toHaveLength(1);
     const pancake = env.collapse.pancakes[0]!;
+    expect(pancake.slabs.length).toBeGreaterThan(1);
+    expect(pancake.pillars.length).toBeGreaterThan(0);
     expect(env.collapse.animating).toBe(true);
 
-    run(env, DEFAULT_COLLAPSE.crushSeconds + 0.1);
-    expect(pancake.progress).toBe(1);
+    const before = env.debris.live.length;
+    run(env, 4);
+    expect(pancake.done).toBe(true);
     expect(env.collapse.animating).toBe(false);
     expect(pancake.body).toBeDefined();
+    // Pillars threw Debris and dust outward.
+    expect(env.debris.live.length + env.debris.rubble.length).toBeGreaterThan(before);
+    expect(env.collapse.drainBursts().length).toBe(pancake.pillars.length);
   });
 
-  test("the pancake falls one storey, then squashes", () => {
-    expect(pancakePose(0)).toEqual({ drop: 0, scale: 1 });
-    expect(pancakePose(0.4).drop).toBe(1);
-    expect(pancakePose(0.4).scale).toBe(1);
-    expect(pancakePose(1).drop).toBe(1);
-    expect(pancakePose(1).scale).toBeCloseTo(0.3);
+  test("slabs fall rigidly, bottom first, and land one storey apart", () => {
+    const env = setup();
+    blastTarget(env, [3, 10, -10], 5, 2000);
+    const { slabs } = env.collapse.pancakes[0]!;
+    const { structure } = env.target;
+    const bottom = (mask: Uint8Array) => structure.coords(mask.indexOf(1))[1];
+    slabs.forEach((slab, n) => {
+      expect(slab.start).toBeCloseTo(n * DEFAULT_COLLAPSE.crushStagger);
+      if (n > 0) expect(bottom(slab.mask) - slab.drop).toBe(bottom(slabs[n - 1]!.mask) - slabs[n - 1]!.drop + 1);
+      expect(slabFall(slab, slab.start)).toBe(0);
+      expect(slabFall(slab, slab.start + 10)).toBe(slab.drop);
+    });
   });
 });
 
