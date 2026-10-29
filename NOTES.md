@@ -41,6 +41,7 @@
 - A Fragment freezes into Rubble, a static body in the same pose, only once Crashcat puts it to sleep. Its hits only count against other Buildings, never the one it came from.
 - Fragments are drawn from their Cells without the Bites cut into them.
 - The tipping margin is a Structure option, so changing it in the GUI rebuilds the Buildings.
+- Auto mode (P, or the GUI) aims with `src/shot/auto-aim.ts`: a grid search over loft and power through `predictTrajectory`, about 1000 predictions and a few ms per Shot. It ignores collisions, so a shot can clip the other building. It ends a Shot once the ball is used up, asleep or 3 s in, without waiting for Debris to settle.
 - `docs/media/m5-tip.gif` and `m5-crush.gif` show both collapses, recorded with headless Chrome.
 
 ## Performance

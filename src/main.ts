@@ -16,6 +16,7 @@ import { createScene } from "./render/scene";
 import { createShotView } from "./render/shot-view";
 import { createStructureOverlay } from "./render/structure-overlay";
 import { launchVelocity } from "./shot/aim";
+import { autoAim } from "./shot/auto-aim";
 import { BALL_TYPES, type BallType } from "./shot/ball-types";
 import { createPowerMeter } from "./shot/power-meter";
 import { TEE, launchBall } from "./shot/shot";
@@ -25,6 +26,8 @@ import { startWorker, workerPort } from "./worker-port";
 
 /** Seconds a Shot may run before the next is allowed, even if the ball still moves. */
 const SETTLE_TIMEOUT = 8;
+/** In auto mode, seconds a Shot may run; it ends sooner once the ball is used up or at rest. */
+const AUTO_SHOT_TIMEOUT = 3;
 
 /** The Target, then a Neighbour. */
 const BUILDINGS: StructureOptions[] = [
@@ -63,8 +66,12 @@ function showBuildings() {
 }
 showBuildings();
 
-// Debug: press G to show the Structure grids.
+// Debug: press G to show the Structure grids, P to toggle auto mode.
 window.addEventListener("keydown", (e) => {
+  if (e.key === "p") {
+    auto.enabled = !auto.enabled;
+    for (const c of autoGui.controllersRecursive()) c.updateDisplay();
+  }
   if (e.key !== "g") return;
   showGrid = !showGrid;
   for (const overlay of overlays) overlay.mesh.visible = showGrid;
@@ -91,16 +98,18 @@ function resetBall() {
   view.setBallVisible(true);
 }
 
+function shoot(power: number) {
+  if (inFlight || power <= 0) return;
+  previewPower = power;
+  const velocity = launchVelocity(vec3.create(), input.aim, power * ballType.maxSpeed);
+  damage.track(launchBall(world, ballType, velocity), ballType);
+  inFlight = true;
+  flightTime = 0;
+  strokes++;
+}
+
 const input = createShotInput(rig.renderer.domElement, meter, {
-  onRelease(power) {
-    if (inFlight || power <= 0) return;
-    previewPower = power;
-    const velocity = launchVelocity(vec3.create(), input.aim, power * ballType.maxSpeed);
-    damage.track(launchBall(world, ballType, velocity), ballType);
-    inFlight = true;
-    flightTime = 0;
-    strokes++;
-  },
+  onRelease: shoot,
   onBallType(id) {
     if (inFlight) return;
     ballType = BALL_TYPES[id];
@@ -108,6 +117,36 @@ const input = createShotInput(rig.renderer.domElement, meter, {
   },
 });
 resetBall();
+
+/**
+ * Auto mode: once the ball is back on the Tee, waits `delay` seconds, then
+ * shoots at a random live Cell of a random standing Building, low floors
+ * more likely, sometimes with the explosive ball. Rebuilds the Buildings
+ * once every one is down.
+ */
+const auto = { enabled: false, delay: 0.8, explosiveChance: 0.3, rebuildBelow: 2 };
+let autoWait = 0;
+
+function autoShoot() {
+  const standing = buildings.list.filter((b) => b.structure.height() >= auto.rebuildBelow);
+  if (standing.length === 0) {
+    if (!collapse.animating && collapse.moving === 0) rebuild();
+    return;
+  }
+  const { structure } = standing[Math.floor(Math.random() * standing.length)]!;
+  const cells: number[] = [];
+  for (let i = 0; i < structure.count; i++) {
+    // Weight each Cell toward the ground: lower floors bring the building down.
+    if (structure.alive[i] && Math.random() < 1 - structure.coords(i)[1] / structure.size[1]) cells.push(i);
+  }
+  if (cells.length === 0) return;
+  ballType = Math.random() < auto.explosiveChance ? BALL_TYPES.explosive : BALL_TYPES.standard;
+  resetBall();
+  const target = structure.cellCenter(vec3.create(), cells[Math.floor(Math.random() * cells.length)]!);
+  const { aim, power } = autoAim(current, target, ballType);
+  input.aim = aim;
+  shoot(power);
+}
 
 // Main-thread milliseconds per frame spent on physics and Structure results, over the last second.
 const frameTimes: number[] = [];
@@ -136,11 +175,22 @@ const loop = createFixedLoop((dt) => {
   frameWork += performance.now() - start;
 
   vec3.copy(previous, current);
-  if (!inFlight) return;
+  if (!inFlight) {
+    autoWait = auto.enabled ? autoWait + dt : 0;
+    if (autoWait >= auto.delay) {
+      autoWait = 0;
+      autoShoot();
+    }
+    return;
+  }
   if (damage.ball === undefined) view.setBallVisible(false);
   else vec3.copy(current, world.getPosition(damage.ball));
   flightTime += dt;
-  if ((world.isSettled() && !collapse.animating) || flightTime > SETTLE_TIMEOUT || current[1] < -5) resetBall();
+  // Auto mode doesn't wait for Debris and Fragments to settle, only for the ball.
+  const ballDone =
+    auto.enabled &&
+    (damage.ball === undefined || world.isSleeping(damage.ball) || flightTime > AUTO_SHOT_TIMEOUT);
+  if (ballDone || (world.isSettled() && !collapse.animating) || flightTime > SETTLE_TIMEOUT || current[1] < -5) resetBall();
 });
 
 /** A cloud of dust where Cells were crushed, and along the base of a Tip. */
@@ -178,6 +228,10 @@ collapseGui.add(collapse.settings, "hitRadius", 0.5, 4, 0.1).name("Fragment Blas
 collapseGui.add(collapse.settings, "tipSpin", 0, 2, 0.05).name("Tip spin (rad/s)");
 collapseGui.add(collapse.settings, "crushSeconds", 0.2, 4, 0.1).name("Crush seconds");
 gui.add({ rebuild }, "rebuild").name("Rebuild buildings");
+const autoGui = gui.addFolder("Auto mode (P)");
+autoGui.add(auto, "enabled").name("Fire automatically");
+autoGui.add(auto, "delay", 0, 5, 0.1).name("Delay between shots (s)");
+autoGui.add(auto, "explosiveChance", 0, 1, 0.05).name("Explosive chance");
 
 const previewVelocity = vec3.create();
 let last = performance.now();
@@ -214,7 +268,7 @@ rig.renderer.setAnimationLoop((now) => {
   const mean = frameTimes.reduce((a, b) => a + b, 0) / Math.max(1, frameTimes.length);
   const worst = Math.max(0, ...frameTimes);
   view.setLabel(
-    `${ballType.name} ball · Strokes ${strokes} · A/D or drag: aim · W/S: loft · hold Space: power · 1/2: ball · G: grid\n` +
+    `${ballType.name} ball · Strokes ${strokes} · A/D or drag: aim · W/S: loft · hold Space: power · 1/2: ball · G: grid · P: auto${auto.enabled ? " (on)" : ""}\n` +
       `${fps.toFixed(0)} fps · physics + Structure ${mean.toFixed(2)} ms/frame (max ${worst.toFixed(2)}) · ` +
       `Debris ${debris.live.length}, Fragments ${collapse.moving}, Rubble ${debris.rubble.length + collapse.fragments.length - collapse.moving} · worker: Structure ${structureMs.toFixed(1)} ms, Bite ${biteMs.toFixed(1)} ms`,
   );

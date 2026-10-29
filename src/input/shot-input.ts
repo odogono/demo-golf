@@ -57,6 +57,9 @@ export function createShotInput(target: HTMLElement, meter: PowerMeter, handlers
     get aim() {
       return aim;
     },
+    set aim(value: Aim) {
+      aim = clampAim(value);
+    },
     update(dt: number) {
       aim = clampAim({
         yaw: aim.yaw + axis(["KeyA", "ArrowLeft"], ["KeyD", "ArrowRight"]) * KEY_RATE * dt,
