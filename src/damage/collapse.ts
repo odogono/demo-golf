@@ -210,7 +210,8 @@ export function createCollapse(
    * Splits a Crush's falling Cells into floors. A layer with at least half as
    * many Cells as the fullest is a slab; the rest are pillars, belonging to
    * the slab below them. Floor `n`, counting up from the lowest, lands with
-   * its slab's bottom `n` metres above the crushed layer's. Pillars below the
+   * its slab's bottom `n` metres above whatever is left beneath the lowest
+   * slab: the crushed layer's bottom, or lower if the Cells under it are gone. Pillars below the
    * lowest slab blow out at once: they gave way in the Crush.
    */
   function pancake(building: Building, layer: number, falling: number[]): Pancake {
@@ -222,10 +223,22 @@ export function createCollapse(
     }
     const fullest = Math.max(...[...byLayer.values()].map((cells) => cells.length));
     const slabLayers = [...byLayer.keys()].filter((y) => byLayer.get(y)!.length * 2 >= fullest).sort((a, b) => a - b);
+    // The stack lands on the highest Cell left under the lowest slab, or the ground.
+    const [nx, , nz] = structure.size;
+    let base = 0;
+    for (const i of byLayer.get(slabLayers[0]!)!) {
+      const col = i % (nx * nz);
+      for (let y = Math.min(layer, structure.coords(i)[1]) - 1; y >= base; y--) {
+        if (structure.alive[col + nx * nz * y]) {
+          base = y + 1;
+          break;
+        }
+      }
+    }
     const floors: Floor[] = slabLayers.map((y, n) => {
       const slab = new Uint8Array(structure.count);
       for (const i of byLayer.get(y)!) slab[i] = 1;
-      return { building, slab, pillars: new Uint8Array(structure.count), drop: Math.max(0, y - (layer + n)), landed: false };
+      return { building, slab, pillars: new Uint8Array(structure.count), drop: Math.max(0, y - (base + n)), landed: false };
     });
     const loose: number[] = [];
     let pillarCount = 0;
