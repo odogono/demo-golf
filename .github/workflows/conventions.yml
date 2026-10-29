@@ -13,6 +13,7 @@ jobs:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
+      - run: bun run typecheck
       - run: bun run test
       # The title and body go through env so a PR can't inject shell code.
       - run: bun tools/commits/check.ts pr
