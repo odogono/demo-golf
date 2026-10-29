@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { Vec3 } from "math";
 import { createBuildings, inlineStructures } from "../src/damage/buildings";
-import { createCollapse, DEFAULT_COLLAPSE, floorFall } from "../src/damage/collapse";
+import { quat, vec3 } from "math";
+import { createCollapse, DEFAULT_COLLAPSE, floorFall, nearestUpright } from "../src/damage/collapse";
 import type { Hit } from "../src/damage/damage";
 import { createDebris } from "../src/damage/debris";
 import { createCrashcatWorld } from "../src/physics/crashcat";
@@ -59,22 +60,33 @@ describe("Tip", () => {
     expect(liveCells(env.neighbour)).toBeLessThan(before);
   });
 
-  test("a Fragment freezes into static Rubble only once it is asleep", () => {
+  test("a Fragment becomes a Rubble Building only once it is asleep, and takes Blasts", () => {
     const env = setup();
     blastTarget(env, [3, 2.5, -10], 5, 2000);
     const fragment = env.collapse.fragments[0]!;
-    const moving = fragment.id;
-    for (let n = 0; n < 20 / DT && !fragment.rubble; n++) {
+    const cells = fragment.cells.length;
+    for (let n = 0; n < 20 / DT && env.collapse.moving > 0; n++) {
       env.world.step(DT);
-      // Before each update, an awake Fragment must not have frozen.
-      const asleep = env.world.isSleeping(moving);
+      // Before each update, an awake Fragment must not have settled.
+      const asleep = env.world.isSleeping(fragment.id);
       env.collapse.update(DT);
-      expect(fragment.rubble as boolean).toBe(asleep);
+      expect(env.collapse.moving === 0).toBe(asleep);
     }
-    expect(fragment.rubble).toBe(true);
     expect(env.collapse.moving).toBe(0);
-    expect(env.world.hasBody(moving)).toBe(false);
-    expect(env.world.hasBody(fragment.id)).toBe(true);
+    expect(env.world.hasBody(fragment.id)).toBe(false);
+
+    const [rubble] = env.buildings.drainAdded();
+    expect(rubble?.rubble).toBe(true);
+    expect(liveCells(rubble!)).toBe(cells);
+    expect(env.world.hasBody(rubble!.body!)).toBe(true);
+    expect(env.buildings.ofBody(rubble!.body!)).toBe(rubble);
+
+    // A Blast on it damages it like any Building.
+    const centre = rubble!.structure.cellCenter(vec3.create(), rubble!.structure.alive.indexOf(1));
+    env.buildings.blast(rubble!, { center: centre, radius: 1.5, power: 500, outward: [0, 1, 0] });
+    const outcome = env.buildings.drain().find((o) => o.building === rubble);
+    expect(outcome!.reply.result.destroyed.length).toBeGreaterThan(0);
+    expect(liveCells(rubble!)).toBeLessThan(cells);
   });
 });
 
@@ -91,7 +103,15 @@ describe("Crush", () => {
     run(env, 6);
     expect(pancake.done).toBe(true);
     expect(env.collapse.animating).toBe(false);
-    expect(pancake.body).toBeDefined();
+    expect(env.collapse.pancakes).toHaveLength(0);
+    // The stack is now Rubble: a Building holding every slab Cell, where the lowest landed.
+    const [rubble] = env.buildings.drainAdded();
+    const slabCells = pancake.floors.reduce((n, f) => n + f.slab.reduce((a, c) => a + c, 0), 0);
+    expect(rubble?.rubble).toBe(true);
+    expect(liveCells(rubble!)).toBe(slabCells);
+    const lowest = pancake.floors[0]!;
+    const landedAt = env.target.structure.coords(lowest.slab.indexOf(1))[1] - lowest.drop;
+    expect(rubble!.structure.origin[1]).toBe(env.target.structure.origin[1] + landedAt);
     // Each floor's slab ends one metre above the one below.
     const { structure } = env.target;
     const bottom = (mask: Uint8Array) => structure.coords(mask.indexOf(1))[1];
@@ -147,4 +167,25 @@ test("clear removes every Fragment and pancake body", () => {
   env.collapse.clear();
   expect(env.world.hasBody(id)).toBe(false);
   expect(env.collapse.fragments).toHaveLength(0);
+});
+
+describe("nearestUpright", () => {
+  const turn = (q: ReturnType<typeof quat.create>) => nearestUpright(q);
+
+  test("keeps a slightly tilted piece as it is", () => {
+    const q = quat.setAxisAngle(quat.create(), [1, 0, 0], 0.2);
+    expect(turn(q)).toEqual([
+      [1, 0, 0],
+      [0, 1, 0],
+      [0, 0, 1],
+    ]);
+  });
+
+  test("lays a piece on its side, keeping the frame right-handed", () => {
+    const q = quat.setAxisAngle(quat.create(), [0, 0, 1], Math.PI / 2 - 0.3);
+    const [x, y, z] = turn(q);
+    expect(x).toEqual([0, 1, 0]);
+    expect(y).toEqual([-1, 0, 0]);
+    expect(vec3.cross(vec3.create(), x, y)).toEqual(z);
+  });
 });

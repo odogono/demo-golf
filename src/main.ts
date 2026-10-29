@@ -89,6 +89,17 @@ function showBuildings() {
 }
 showBuildings();
 
+/** Draws Buildings that Rubble at rest has become since the last call. */
+function showRubble() {
+  for (const building of buildings.drainAdded()) {
+    buildingViews.add(building);
+    const overlay = createStructureOverlay(building.structure);
+    overlay.mesh.visible = showGrid;
+    rig.scene.add(overlay.mesh);
+    overlays[building.id] = overlay;
+  }
+}
+
 // V switches the aiming view. Debug: G shows the Structure grids, P toggles auto mode, O frees the camera to orbit.
 window.addEventListener("keydown", (e) => {
   if (e.key === "v") director.toggleView();
@@ -160,7 +171,7 @@ const auto = { enabled: false, delay: 0.8, explosiveChance: 0.3, rebuildBelow: 2
 let autoWait = 0;
 
 function autoShoot() {
-  const standing = buildings.list.filter((b) => b.structure.height() >= auto.rebuildBelow);
+  const standing = buildings.list.filter((b) => !b.rubble && b.structure.height() >= auto.rebuildBelow);
   if (standing.length === 0) {
     if (!collapse.animating && collapse.moving === 0) rebuild();
     return;
@@ -207,6 +218,7 @@ const loop = createFixedLoop((dt) => {
     director.impact(IMPACT_CENTRE);
   }
   for (const { center, outward } of collapse.drainBursts()) dust.puff(center, outward, 6, 1.5);
+  showRubble();
   debris.update();
   frameWork += performance.now() - start;
 
@@ -340,7 +352,7 @@ rig.renderer.setAnimationLoop((now) => {
     `${ballType.name} ball · Strokes ${strokes} · A/D or drag: aim · W/S: loft · hold Space: power · 1/2: ball · G: grid · V: view · O: orbit · P: auto${auto.enabled ? " (on)" : ""}\n` +
       `${cameraView.orbiting ? "Orbit" : director.mode}${director.mode === "AimCam" ? ` (${director.view})` : ""} · ` +
       `${fps.toFixed(0)} fps · physics + Structure ${mean.toFixed(2)} ms/frame (max ${worst.toFixed(2)}) · ` +
-      `Debris ${debris.live.length}, Fragments ${collapse.moving}, Rubble ${debris.rubble.length + collapse.fragments.length - collapse.moving} · worker: Structure ${structureMs.toFixed(1)} ms, Bite ${biteMs.toFixed(1)} ms`,
+      `Debris ${debris.live.length}, Fragments ${collapse.moving}, Rubble ${debris.rubble.length + buildings.list.filter((b) => b.rubble).length} · worker: Structure ${structureMs.toFixed(1)} ms, Bite ${biteMs.toFixed(1)} ms`,
   );
 
   const pose = director.update(Math.min(elapsed, 0.1), {

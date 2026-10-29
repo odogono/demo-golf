@@ -31,7 +31,22 @@ export function createBuildingViews(scene: THREE.Scene, port: Port<CsgRequest, C
     mesh.geometry = geometry;
   }
 
+  function add({ id, structure }: Building) {
+    const mesh = new THREE.Mesh(new THREE.BufferGeometry(), material);
+    const { position, normal } = buildingMesh({ size: structure.size, alive: structure.alive, cut: new Map() });
+    setGeometry(mesh, position, normal);
+    mesh.position.set(...structure.origin);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+    meshes[id] = mesh;
+    port.send({ type: "create", id, generation, size: [...structure.size], alive: structure.alive.slice() });
+  }
+
   return {
+    /** Draws a Building added since the last `reset`, such as Rubble at rest. */
+    add,
+
     /** Draws `buildings` undamaged, replacing any earlier ones. */
     reset(buildings: readonly Building[]) {
       generation++;
@@ -40,17 +55,7 @@ export function createBuildingViews(scene: THREE.Scene, port: Port<CsgRequest, C
         scene.remove(mesh);
         mesh.geometry.dispose();
       }
-      for (const { id, structure } of buildings) {
-        const mesh = new THREE.Mesh(new THREE.BufferGeometry(), material);
-        const { position, normal } = buildingMesh({ size: structure.size, alive: structure.alive, cut: new Map() });
-        setGeometry(mesh, position, normal);
-        mesh.position.set(...structure.origin);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        scene.add(mesh);
-        meshes[id] = mesh;
-        port.send({ type: "create", id, generation, size: [...structure.size], alive: structure.alive.slice() });
-      }
+      for (const building of buildings) add(building);
     },
 
     /** Sends a Blast's outcome to be cut, if it changed the grid. */
