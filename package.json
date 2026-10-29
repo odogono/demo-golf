@@ -19,6 +19,7 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
+    "crashcat": "github:isaac-mason/crashcat#e3dcec1",
     "math": "0.1.0",
     "three": "^0.186.1"
   }

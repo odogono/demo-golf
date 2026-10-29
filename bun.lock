@@ -5,6 +5,7 @@
     "": {
       "name": "demo-golf",
       "dependencies": {
+        "crashcat": "github:isaac-mason/crashcat#e3dcec1",
         "math": "0.1.0",
         "three": "^0.186.1",
       },
@@ -71,6 +72,8 @@
     "@typescript/typescript-win32-x64": ["@typescript/typescript-win32-x64@7.0.2", "", { "os": "win32", "cpu": "x64" }, "sha512-0BQ3HkAHHlKLSp1qRvf3SUhGpGsDuhB/jgFw75guyqbxJqEaS0Cw/VFO8i2nHglJUzQCRtMMR/IBAKE3ETMC4g=="],
 
     "bun-types": ["bun-types@1.4.4", "", { "dependencies": { "@types/node": "*", "undici-types": "*" } }, "sha512-yjrJh5oGX7mMPKGd19YXyIjmEuj4G4zNC30bs7PM9Az7NQ3ndF3j6hbeRdvJTRQEhJ/FYQwW0a2moweEi2hMxQ=="],
+
+    "crashcat": ["crashcat@github:isaac-mason/crashcat#e3dcec1", { "dependencies": { "math": "^0.1.0" } }, "isaac-mason-crashcat-e3dcec1", "sha512-kEf8PwZ51RifOBPP66VtRcc894onAt/yU8hcsxFwpU4fe3/Aebo9jTQ06GbeCabfExvb7j9iK+SwjNnCE3kM0w=="],
 
     "fflate": ["fflate@0.8.3", "", {}, "sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA=="],
 
