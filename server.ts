@@ -1,6 +1,7 @@
 // Dev: `bun dev` bundles public/index.html with hot reload.
 // Prod: `bun start` serves the static bundle that `bun run build` wrote to dist/.
 import index from "./public/index.html";
+import { WORKERS, bundleWorker, workerPath } from "./workers";
 
 const port = Number(process.env.PORT ?? 3000);
 const production = process.env.NODE_ENV === "production";
@@ -16,7 +17,10 @@ const server = production
     })
   : Bun.serve({
       port,
-      routes: { "/": index },
+      routes: {
+        "/": index,
+        ...Object.fromEntries(WORKERS.map((entry) => [workerPath(entry), () => bundleWorker(entry)])),
+      },
       development: { hmr: true, console: true },
     });
 

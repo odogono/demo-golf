@@ -15,7 +15,7 @@
 
 - **Contact impulse:** Crashcat doesn't report it. Contact listeners run before the solver, and the impulses the solver applies are kept internally. `ContactEvent.impulse` is filled from `estimateCollisionResponse(...).contactImpulse`, called in `onContactAdded`. It is an estimate, not the impulse the solver actually applied.
 
-- **CCD contact normal:** in `onContactAdded`, contacts from the CCD pass (`MotionQuality.LINEAR_CAST`) carry a normal pointing from B to A, the opposite of narrowphase contacts. Left alone, `estimateCollisionResponse` reads the bodies as separating and returns an impulse of 0. The adapter flips the normal when a CCD body is involved and the bodies separate along it. A new contact on a CCD body that really is separating would be flipped wrongly; we haven't seen one. Full write-up in [`docs/crashcat-issues.md`](docs/crashcat-issues.md).
+- **CCD contact normal:** in `onContactAdded`, contacts from the CCD pass (`MotionQuality.LINEAR_CAST`) carry a normal pointing from B to A, the opposite of narrowphase contacts. Left alone, `estimateCollisionResponse` reads the bodies as separating and returns an impulse of 0. The adapter flips the normal when it points into the CCD body rather than out of it, which assumes CCD bodies are convex. Full write-up in [`docs/crashcat-issues.md`](docs/crashcat-issues.md).
 - **Settled:** `isSettled()` checks that `world.bodies.activeBodyCount` is 0. That count only includes awake non-static bodies, so it's 0 exactly when every dynamic body sleeps.
 
 ## Maths
@@ -25,6 +25,19 @@
 - `quickhull2` is exported from `math/geometry`, not the root `math` entry.
 - **Gap:** `polygon2` has `containsPoint` but no signed distance from a point to a polygon's edge, nor a way to inset a polygon. The Structure's Tip check needs both for its safety margin, so `src/structure/structure.ts` finds the nearest hull edge itself.
 
+## Damage (M4)
+
+- Bun's bundler doesn't follow `new Worker(new URL(...))`. `workers.ts` lists the workers; `build.ts` bundles each to `dist/<name>.worker.js`, the dev server bundles them on request, and `startWorker` loads them from beside the page.
+- `three-mesh-bvh` is pinned to `0.9.10`: from `0.9.11`, `three-bvh-csg@0.0.18` logs a `maxLeafSize` deprecation warning on every cut. Unpin once `three-bvh-csg` passes `targetLeafSize`.
+- A Building's mesh is built per Cell. A Bite subtracts its jagged blob from each Cell the Blast damaged, one small CSG operation per Cell, and Cells that leave the Structure simply drop out of the mesh. So a Bite never cuts where the grid hasn't changed, and the cuts are cheap, but each Bite ends in straight lines at the faces of the Cells it touched.
+- Each Building collides as one static compound of boxes merged from its live Cells (132 boxes for the 8×20×8 Target), rebuilt whenever Cells leave. Bites never change it.
+- The body cap counts dynamic bodies only: Debris and the ball, and Fragments from M5. The static Buildings and ground don't count.
+- Until M5, Cells that leave in a Detach, Crush or Tip just vanish behind a cloud of dust.
+
 ## Performance
 
-_Not measured yet._
+Measured 2026-10-29 on an Apple M5 MacBook, faster than the mid-range laptop the target is set for.
+
+- **`bun run bench`** (Bun, no rendering): ten shots in a row at the Target. Main-thread physics and Structure work per frame: mean 0.11 ms, p99 1.35 ms. The worst frame, 6.3 ms, is the first hit, while the code is still cold; every later frame stays under 4 ms. In the workers, a Blast's `applyBlast` and `evaluate` take 1.5–3.4 ms and a Bite takes 2–8 ms.
+- **In the browser**, the production build in headless Chrome 1248 (Metal), driven by Playwright for ten standard shots and five explosive ones: a steady 60 fps, with physics and Structure work at 0.02–0.2 ms a frame (0.7 ms at worst) and up to 105 Debris. The on-screen label shows these numbers live.
+- Not yet measured on a mid-range laptop.

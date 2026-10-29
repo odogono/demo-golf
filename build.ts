@@ -1,4 +1,5 @@
 import { rm } from "node:fs/promises";
+import { WORKERS } from "./workers";
 
 await rm("./dist", { recursive: true, force: true });
 
@@ -12,8 +13,18 @@ const result = await Bun.build({
   publicPath: process.env.GOLF_BASE,
 });
 
-if (!result.success) {
-  for (const log of result.logs) console.error(log);
+const workers = await Bun.build({
+  entrypoints: WORKERS,
+  outdir: "./dist",
+  target: "browser",
+  minify: true,
+  sourcemap: "linked",
+  naming: "[name].js",
+});
+
+for (const build of [result, workers]) {
+  if (build.success) continue;
+  for (const log of build.logs) console.error(log);
   process.exit(1);
 }
-for (const output of result.outputs) console.log(`${output.path} ${(output.size / 1024).toFixed(1)} KB`);
+for (const output of [...result.outputs, ...workers.outputs]) console.log(`${output.path} ${(output.size / 1024).toFixed(1)} KB`);

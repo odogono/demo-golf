@@ -35,15 +35,6 @@ export function createScene(container: HTMLElement): SceneRig {
   ground.receiveShadow = true;
   scene.add(ground);
 
-  // Placeholder Target: 8×8×20 m, until the Structure drives it.
-  const target = new THREE.Mesh(
-    new THREE.BoxGeometry(8, 20, 8),
-    new THREE.MeshStandardMaterial({ color: 0xb0aaa0 }),
-  );
-  target.position.set(0, 10, -10);
-  target.castShadow = true;
-  scene.add(target);
-
   const resize = () => {
     const { clientWidth: w, clientHeight: h } = container;
     renderer.setSize(w, h);

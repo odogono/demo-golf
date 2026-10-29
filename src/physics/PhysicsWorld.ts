@@ -8,7 +8,11 @@ export type BodyId = number;
 
 export type ShapeDesc =
   | { kind: "box"; halfExtents: Vec3 }
-  | { kind: "sphere"; radius: number };
+  | { kind: "sphere"; radius: number }
+  /** Child shapes placed relative to the body. Static compounds are cheaper to collide with. */
+  | { kind: "compound"; children: CompoundChild[] };
+
+export type CompoundChild = { shape: ShapeDesc; position: Vec3; rotation?: Quat };
 
 export type MotionKind = "static" | "dynamic" | "kinematic";
 

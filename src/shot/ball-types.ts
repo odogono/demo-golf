@@ -1,6 +1,6 @@
 /**
  * Ball types are data: a Shot looks its ball up here by id. Explosive balls
- * carry a Blast, which is applied to Structures from M4.
+ * carry a Blast, set off on their first contact (`damage/damage.ts`).
  */
 export type BallType = {
   id: string;
