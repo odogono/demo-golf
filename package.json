@@ -1,0 +1,15 @@
+{
+  "name": "demo-golf",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare": "git config core.hooksPath .githooks",
+    "changelog": "bun tools/commits/changelog.ts",
+    "changelog:release": "bun tools/commits/changelog.ts release",
+    "test": "bun test tools"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.0"
+  }
+}
