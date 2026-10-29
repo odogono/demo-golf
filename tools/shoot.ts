@@ -11,7 +11,7 @@ import { PNG } from "pngjs";
 const HELP = `usage: bun run shoot [options]
 
   --blast x,y,z,radius,power   blast the Target at a point (a Crush: 3,10,-10,5,2000)
-  --building N                 which Building --blast hits (0 Target, 1 Neighbour; default 0)
+  --building N                 which Building --blast hits, by index (default 0, the Target)
   --shot POWER                 fire the ball at POWER (0-1) along the default aim
   --explosive                  load the explosive ball before --shot
   --look px,py,pz,tx,ty,tz     pin the camera at p looking at t (e.g. 14,9,18,4,6,-10)

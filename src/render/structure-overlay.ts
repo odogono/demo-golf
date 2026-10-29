@@ -28,7 +28,7 @@ export function createStructureOverlay(structure: Structure) {
       structure.cellCenter(centre, i);
       matrix.makeTranslation(centre[0], centre[1], centre[2]);
       mesh.setMatrixAt(n, matrix);
-      const health = structure.integrity[i]! / structure.fullIntegrity;
+      const health = structure.integrity[i]! / structure.maxIntegrity[i]!;
       mesh.setColorAt(n, color.setRGB(1 - health, health, 0.2));
       n++;
     }

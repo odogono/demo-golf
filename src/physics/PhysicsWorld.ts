@@ -9,6 +9,8 @@ export type BodyId = number;
 export type ShapeDesc =
   | { kind: "box"; halfExtents: Vec3 }
   | { kind: "sphere"; radius: number }
+  /** The convex hull of `points`, flat as [x, y, z, ...]. */
+  | { kind: "convexHull"; points: number[] }
   /** Child shapes placed relative to the body. Static compounds are cheaper to collide with. */
   | { kind: "compound"; children: CompoundChild[] };
 

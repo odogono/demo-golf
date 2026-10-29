@@ -8,6 +8,7 @@ import { createDamage, DEFAULT_DAMAGE } from "../src/damage/damage";
 import { createDebris } from "../src/damage/debris";
 import { createBiteCutter } from "../src/fx/bite";
 import { createBuildingViews } from "../src/fx/building-view";
+import { BUILDINGS } from "../src/hole";
 import { createCrashcatWorld } from "../src/physics/crashcat";
 import { BALL_TYPES } from "../src/shot/ball-types";
 import { launchBall } from "../src/shot/shot";
@@ -19,10 +20,7 @@ const type = (process.argv[2] ?? "standard") as keyof typeof BALL_TYPES;
 
 const world = createCrashcatWorld();
 world.addBody({ shape: { kind: "box", halfExtents: [100, 0.5, 100] }, motion: "static", position: [0, -0.5, 0] });
-const buildings = createBuildings(world, inlineStructures(), [
-  { origin: [-4, 0, -14], size: [8, 20, 8] },
-  { origin: [8, 0, -12], size: [6, 12, 6] },
-]);
+const buildings = createBuildings(world, inlineStructures(), BUILDINGS);
 const debris = createDebris(world, { cap: 150, otherBodies: () => (damage.ball === undefined ? 0 : 1) });
 const damage = createDamage(world, buildings, debris, { ...DEFAULT_DAMAGE });
 const cutter = createBiteCutter();

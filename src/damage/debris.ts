@@ -1,7 +1,8 @@
 import { vec3, type Quat, type Vec3 } from "math";
 import type { BodyId, PhysicsWorld } from "../physics/PhysicsWorld";
 
-export type DebrisPiece = { halfExtents: Vec3; position: Vec3; rotation: Quat };
+/** `colour` comes from the Material it was thrown off, as 0xRRGGBB. */
+export type DebrisPiece = { halfExtents: Vec3; position: Vec3; rotation: Quat; colour: number };
 type LivePiece = DebrisPiece & { id: BodyId };
 
 export type DebrisOptions = {
@@ -35,7 +36,7 @@ export function createDebris(world: PhysicsWorld, options: DebrisOptions) {
       piece.rotation = world.getRotation(piece.id);
       world.removeBody(piece.id);
     }
-    rubble.push({ halfExtents: piece.halfExtents, position: piece.position, rotation: piece.rotation });
+    rubble.push({ halfExtents: piece.halfExtents, position: piece.position, rotation: piece.rotation, colour: piece.colour });
     if (rubble.length > rubbleLimit) rubble.shift();
     return true;
   }
@@ -58,8 +59,8 @@ export function createDebris(world: PhysicsWorld, options: DebrisOptions) {
       while (live.length > 0 && live.length + otherBodies() > cap) freezeOldest();
     },
 
-    /** Throws `count` chunks from `center`, mostly along `outward`. Returns how many were spawned. */
-    spawn(center: Vec3, outward: Vec3, count: number): number {
+    /** Throws `count` chunks of `colour` from `center`, mostly along `outward`. Returns how many were spawned. */
+    spawn(center: Vec3, outward: Vec3, count: number, colour = 0x9a948a): number {
       let spawned = 0;
       for (let n = 0; n < count; n++) {
         if (!makeRoom()) break;
@@ -83,7 +84,7 @@ export function createDebris(world: PhysicsWorld, options: DebrisOptions) {
           friction: 0.8,
           restitution: 0.1,
         });
-        live.push({ id, halfExtents, position, rotation: [0, 0, 0, 1] });
+        live.push({ id, halfExtents, position, rotation: [0, 0, 0, 1], colour });
         spawned++;
       }
       return spawned;

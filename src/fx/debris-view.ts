@@ -5,7 +5,7 @@ import type { Debris, DebrisPiece } from "../damage/debris";
 export function createDebrisView(scene: THREE.Scene, debris: Debris, capacity = 1024) {
   const mesh = new THREE.InstancedMesh(
     new THREE.BoxGeometry(2, 2, 2),
-    new THREE.MeshStandardMaterial({ color: 0x9a948a, roughness: 1 }),
+    new THREE.MeshStandardMaterial({ roughness: 1 }),
     capacity,
   );
   mesh.castShadow = true;
@@ -18,6 +18,7 @@ export function createDebrisView(scene: THREE.Scene, debris: Debris, capacity = 
   const position = new THREE.Vector3();
   const rotation = new THREE.Quaternion();
   const scale = new THREE.Vector3();
+  const colour = new THREE.Color();
 
   return {
     mesh,
@@ -28,12 +29,14 @@ export function createDebrisView(scene: THREE.Scene, debris: Debris, capacity = 
         position.set(...piece.position);
         rotation.set(...piece.rotation);
         scale.set(...piece.halfExtents);
+        mesh.setColorAt(n, colour.setHex(piece.colour));
         mesh.setMatrixAt(n++, matrix.compose(position, rotation, scale));
       };
       debris.rubble.forEach(draw);
       debris.live.forEach(draw);
       mesh.count = n;
       mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     },
   };
 }

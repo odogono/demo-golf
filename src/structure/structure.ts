@@ -1,6 +1,7 @@
 import { vec3, type Vec3 } from "math";
 import { quickhull2 } from "math/geometry";
 import { polygon2 } from "math/shapes";
+import { BLUEPRINTS, MATERIAL_NAMES, MATERIALS, type BlueprintName, type Trim } from "./blueprint";
 
 /**
  * A Structure is a grid of 1 m Cells indexed by (x, y, z), with y up. Cell
@@ -14,6 +15,8 @@ export interface StructureOptions {
   origin?: Vec3;
   /** Bounding box in whole metres: width (x), height (y), depth (z). */
   size: Vec3;
+  /** Which Blueprint lays out its Cells; the default is a frame of slabs and pillars. */
+  blueprint?: BlueprintName;
   /** Metres from one floor slab to the next. */
   floorHeight?: number;
   /** Largest gap between pillars, in metres. */
@@ -28,9 +31,18 @@ export interface StructureOptions {
   tipMargin?: number;
   /**
    * Builds the grid from these Cells, indexed like the Structure's own,
-   * instead of the procedural building. Rubble uses it to become a Building.
+   * instead of from the Blueprint, with `integrity` as each Cell's undamaged
+   * Integrity. Rubble uses it to become a Building. `trims` gives Cells their
+   * true shapes; Cells without one are whole cubes.
    */
-  cells?: { alive: Uint8Array; mass: Float32Array; integrity: Float32Array };
+  cells?: {
+    alive: Uint8Array;
+    mass: Float32Array;
+    integrity: Float32Array;
+    material: Uint8Array;
+    colour: Uint32Array;
+    trims?: Map<number, Trim[]>;
+  };
 }
 
 export interface BlastResult {
@@ -57,6 +69,7 @@ export function createStructure(options: StructureOptions) {
   const {
     origin = vec3.create(),
     size,
+    blueprint = "frame",
     floorHeight = 4,
     pillarSpacing = 4,
     slabMass = 1,
@@ -75,6 +88,13 @@ export function createStructure(options: StructureOptions) {
   const alive = new Uint8Array(count);
   const mass = new Float32Array(count);
   const integrity = new Float32Array(count);
+  const maxIntegrity = new Float32Array(count);
+  /** Index into `MATERIAL_NAMES`. */
+  const material = new Uint8Array(count);
+  /** Paint, as 0xRRGGBB. */
+  const colour = new Uint32Array(count);
+  /** The true shapes of Cells that only partly fill their cubes. */
+  const trims = new Map<number, Trim[]>();
   const baseCapacity = new Float32Array(count);
   const layerDamaged = new Uint8Array(ny);
 
@@ -88,35 +108,36 @@ export function createStructure(options: StructureOptions) {
   const isAlive = (x: number, y: number, z: number) =>
     x >= 0 && x < nx && y >= 0 && y < ny && z >= 0 && z < nz && alive[index(x, y, z)] === 1;
 
-  // Procedural building: a slab on every floor and a roof, held up by pillars
-  // on the edges and at most `pillarSpacing` apart.
-  const pillarLines = (n: number) => {
-    const lines = new Set([0, n - 1]);
-    const gaps = Math.ceil((n - 1) / pillarSpacing);
-    for (let g = 1; g < gaps; g++) lines.add(Math.round((g * (n - 1)) / gaps));
-    return lines;
-  };
-  const pillarsX = pillarLines(nx);
-  const pillarsZ = pillarLines(nz);
   if (cells) {
     alive.set(cells.alive);
     mass.set(cells.mass);
     integrity.set(cells.integrity);
-  } else for (let y = 0; y < ny; y++) {
-    const slab = y % floorHeight === 0 || y === ny - 1;
-    for (let z = 0; z < nz; z++) {
-      for (let x = 0; x < nx; x++) {
-        const pillar = pillarsX.has(x) && pillarsZ.has(z);
-        if (!slab && !pillar) continue;
-        const i = index(x, y, z);
-        alive[i] = 1;
-        mass[i] = pillar ? pillarMass : slabMass;
-        integrity[i] = fullIntegrity;
+    maxIntegrity.set(cells.integrity);
+    material.set(cells.material);
+    colour.set(cells.colour);
+    for (const [i, t] of cells.trims ?? []) trims.set(i, t);
+  } else {
+    const plan = BLUEPRINTS[blueprint]({ size: [nx, ny, nz], floorHeight, pillarSpacing, slabMass, pillarMass });
+    for (let y = 0; y < ny; y++) {
+      for (let z = 0; z < nz; z++) {
+        for (let x = 0; x < nx; x++) {
+          const cell = plan(x, y, z);
+          if (!cell) continue;
+          const i = index(x, y, z);
+          const m = MATERIALS[cell.material];
+          alive[i] = 1;
+          material[i] = MATERIAL_NAMES.indexOf(cell.material);
+          colour[i] = cell.colour;
+          if (cell.trim) trims.set(i, cell.trim);
+          mass[i] = cell.mass ?? m.mass;
+          maxIntegrity[i] = fullIntegrity * m.toughness;
+          integrity[i] = maxIntegrity[i]!;
+        }
       }
     }
   }
 
-  const capacity = (i: number) => (baseCapacity[i]! * integrity[i]!) / fullIntegrity;
+  const capacity = (i: number) => (baseCapacity[i]! * integrity[i]!) / maxIntegrity[i]!;
 
   /** Groups of Cells on a layer joined side by side, as grid columns. */
   function layerGroups(y: number): number[][] {
@@ -208,7 +229,7 @@ export function createStructure(options: StructureOptions) {
       for (let col = 0; col < nx * nz; col++) peak = Math.max(peak, load[col + nx * nz * y]!);
       for (let col = 0; col < nx * nz; col++) {
         const i = col + nx * nz * y;
-        if (alive[i]) baseCapacity[i] = peak * safetyFactor;
+        if (alive[i]) baseCapacity[i] = peak * safetyFactor * MATERIALS[MATERIAL_NAMES[material[i]!]!].strength;
       }
     }
   }
@@ -336,6 +357,10 @@ export function createStructure(options: StructureOptions) {
     alive,
     mass,
     integrity,
+    maxIntegrity,
+    material,
+    colour,
+    trims,
     fullIntegrity,
     index,
     coords,
@@ -346,6 +371,26 @@ export function createStructure(options: StructureOptions) {
     cellCenter(out: Vec3, i: number): Vec3 {
       const [x, y, z] = coords(i);
       return vec3.set(out, origin[0] + x + 0.5, origin[1] + y + 0.5, origin[2] + z + 0.5);
+    },
+
+    materialOf(i: number) {
+      return MATERIALS[MATERIAL_NAMES[material[i]!]!];
+    },
+
+    /** The Material of the live Cell nearest `point`, or undefined if none are left. */
+    materialNear(point: Vec3) {
+      let best = -1;
+      let bestD = Infinity;
+      const c = vec3.create();
+      for (let i = 0; i < count; i++) {
+        if (!alive[i]) continue;
+        const d = vec3.squaredDistance(this.cellCenter(c, i), point);
+        if (d < bestD) {
+          bestD = d;
+          best = i;
+        }
+      }
+      return best < 0 ? undefined : this.materialOf(best);
     },
 
     /** Damages Cells within `radius` of `center`, falling off linearly to the edge. */

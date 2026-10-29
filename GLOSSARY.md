@@ -1,6 +1,6 @@
 # Glossary
 
-**Hole** — One playable level: a Tee, a Target, at least one Neighbour, and a Par.
+**Hole** — One playable level: a Tee, a Target, any number of Neighbours (possibly none), and a Par.
 
 **Tee** — The fixed spot every Shot starts from.
 

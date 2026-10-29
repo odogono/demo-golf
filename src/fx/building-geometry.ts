@@ -11,7 +11,9 @@ export type CellMesh = { position: Float32Array; normal: Float32Array };
 export type BuildingShape = {
   size: readonly [number, number, number];
   alive: Uint8Array;
-  /** Triangles of the Cells Bites have cut; every other live Cell is intact. */
+  /** Each Cell's paint, as 0xRRGGBB. */
+  colour: Uint32Array;
+  /** Triangles of the Cells trimmed to their Blueprint's shape or cut by Bites; every other live Cell is intact. */
   cut: Map<number, CellMesh>;
 };
 
@@ -57,8 +59,14 @@ function writeFace(
   return offset;
 }
 
-/** Merges every live Cell into one non-indexed triangle list. */
-export function buildingMesh({ size: [nx, ny, nz], alive, cut }: BuildingShape): CellMesh {
+/** An sRGB channel (0-255) in linear space, as Three.js expects vertex colours. */
+function linear(c: number): number {
+  const v = c / 255;
+  return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+}
+
+/** Merges every live Cell into one non-indexed triangle list, with each vertex painted its Cell's colour. */
+export function buildingMesh({ size: [nx, ny, nz], alive, colour, cut }: BuildingShape): CellMesh & { colour: Float32Array } {
   const index = (x: number, y: number, z: number) => x + nx * (z + nz * y);
   const intact = (x: number, y: number, z: number) =>
     x >= 0 && x < nx && y >= 0 && y < ny && z >= 0 && z < nz && alive[index(x, y, z)] === 1 && !cut.has(index(x, y, z));
@@ -70,6 +78,17 @@ export function buildingMesh({ size: [nx, ny, nz], alive, cut }: BuildingShape):
   }
   const position = new Float32Array(floats);
   const normal = new Float32Array(floats);
+  const rgb = new Float32Array(floats);
+  const paint = (from: number, to: number, hex: number) => {
+    const r = linear((hex >> 16) & 0xff);
+    const g = linear((hex >> 8) & 0xff);
+    const b = linear(hex & 0xff);
+    for (let k = from; k < to; k += 3) {
+      rgb[k] = r;
+      rgb[k + 1] = g;
+      rgb[k + 2] = b;
+    }
+  };
 
   let o = 0;
   for (let y = 0; y < ny; y++) {
@@ -77,19 +96,21 @@ export function buildingMesh({ size: [nx, ny, nz], alive, cut }: BuildingShape):
       for (let x = 0; x < nx; x++) {
         const i = index(x, y, z);
         if (!alive[i]) continue;
+        const start = o;
         const own = cut.get(i);
         if (own) {
           position.set(own.position, o);
           normal.set(own.normal, o);
           o += own.position.length;
-          continue;
+        } else {
+          for (const face of FACES) {
+            if (intact(x + face.n[0], y + face.n[1], z + face.n[2])) continue;
+            o = writeFace(position, normal, o, face, x, y, z);
+          }
         }
-        for (const face of FACES) {
-          if (intact(x + face.n[0], y + face.n[1], z + face.n[2])) continue;
-          o = writeFace(position, normal, o, face, x, y, z);
-        }
+        paint(start, o, colour[i]!);
       }
     }
   }
-  return { position: position.slice(0, o), normal: normal.slice(0, o) };
+  return { position: position.slice(0, o), normal: normal.slice(0, o), colour: rgb.slice(0, o) };
 }

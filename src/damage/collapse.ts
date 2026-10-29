@@ -1,6 +1,7 @@
 import { quat, vec3, type Quat, type Vec3 } from "math";
 import type { BodyId, CompoundChild, ContactEvent, PhysicsWorld } from "../physics/PhysicsWorld";
 import { structureColliders } from "../structure/colliders";
+import type { Trim } from "../structure/blueprint";
 import type { StructureEvent } from "../structure/structure";
 import type { BlastOutcome, Building, Buildings } from "./buildings";
 import type { Hit } from "./damage";
@@ -201,7 +202,24 @@ export function createCollapse(
     const size: Vec3 = [0, 0, 0];
     for (const p of at) for (let k = 0; k < 3; k++) size[k] = Math.max(size[k]!, p[k]! + 1);
     const count = size[0] * size[1] * size[2];
-    const grid = { alive: new Uint8Array(count), mass: new Float32Array(count), integrity: new Float32Array(count) };
+    const grid = {
+      alive: new Uint8Array(count),
+      mass: new Float32Array(count),
+      integrity: new Float32Array(count),
+      material: new Uint8Array(count),
+      colour: new Uint32Array(count),
+      trims: new Map<number, Trim[]>(),
+    };
+    // A piece that only moved, without turning, keeps its Cells' true shapes,
+    // moved with it into the new grid. Its floors may have dropped different
+    // heights, which round shapes don't mind. A turned one is drawn as whole cubes.
+    const shift = vec3.subtract(vec3.create(), centres[0]!, source.structure.cellCenter(vec3.create(), cells[0]!));
+    const moved = cells.every((cell, n) => {
+      const d = vec3.subtract(vec3.create(), centres[n]!, source.structure.cellCenter(vec3.create(), cell));
+      return Math.abs(d[0]! - shift[0]!) < 1e-3 && Math.abs(d[2]! - shift[2]!) < 1e-3;
+    });
+    const dx = Math.round(source.structure.origin[0] + shift[0] - min[0]);
+    const dz = Math.round(source.structure.origin[2] + shift[2] - min[2]);
     const { structure } = source;
     cells.forEach((cell, n) => {
       const [x, y, z] = at[n]!;
@@ -209,7 +227,11 @@ export function createCollapse(
       grid.alive[i] = 1;
       grid.mass[i] = structure.mass[cell]!;
       // The Structure zeroes a Cell's Integrity when it leaves, so Rubble starts whole.
-      grid.integrity[i] = structure.fullIntegrity;
+      grid.integrity[i] = structure.maxIntegrity[cell]!;
+      grid.material[i] = structure.material[cell]!;
+      grid.colour[i] = structure.colour[cell]!;
+      const trim = structure.trims.get(cell);
+      if (moved && trim) grid.trims.set(i, trim.map((t) => ({ ...t, centre: [t.centre[0] + dx, t.centre[1] + dz] })));
     });
     if (min[1] < 0.5) min[1] = 0;
     buildings.addRubble({ ...source.options, origin: min, size, cells: grid });
@@ -292,7 +314,7 @@ export function createCollapse(
       0.2,
       centre[2] - (origin[2] + size[2] / 2),
     ]);
-    if (random() < share) debris.spawn(centre, out, 1);
+    if (random() < share) debris.spawn(centre, out, 1, building.structure.materialOf(cell).debris);
     bursts.push({ center: centre, outward: out });
   }
 
@@ -355,7 +377,7 @@ export function createCollapse(
           outward,
         };
         buildings.blast(target, blast);
-        debris.spawn(blast.center, outward, 5 + Math.round(10 * Math.min(1, blast.power / 150)));
+        debris.spawn(blast.center, outward, 5 + Math.round(10 * Math.min(1, blast.power / 150)), target.structure.materialNear(blast.center)?.debris);
         hits.push({ blast, buildings: [target] });
       }
 
