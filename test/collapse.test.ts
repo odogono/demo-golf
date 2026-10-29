@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Vec3 } from "math";
 import { createBuildings, inlineStructures } from "../src/damage/buildings";
-import { createCollapse, DEFAULT_COLLAPSE, slabFall } from "../src/damage/collapse";
+import { createCollapse, DEFAULT_COLLAPSE, floorFall } from "../src/damage/collapse";
 import type { Hit } from "../src/damage/damage";
 import { createDebris } from "../src/damage/debris";
 import { createCrashcatWorld } from "../src/physics/crashcat";
@@ -79,38 +79,51 @@ describe("Tip", () => {
 });
 
 describe("Crush", () => {
-  test("crushing a middle floor blows out the pillars and stacks the slabs above, then leaves Rubble", () => {
+  test("crushing a middle floor drops the floors above into a stack, then leaves Rubble", () => {
     const env = setup();
     blastTarget(env, [3, 10, -10], 5, 2000);
     expect(env.collapse.fragments).toHaveLength(0);
     expect(env.collapse.pancakes).toHaveLength(1);
     const pancake = env.collapse.pancakes[0]!;
-    expect(pancake.slabs.length).toBeGreaterThan(1);
-    expect(pancake.pillars.length).toBeGreaterThan(0);
+    expect(pancake.floors.length).toBeGreaterThan(1);
     expect(env.collapse.animating).toBe(true);
 
-    const before = env.debris.live.length;
-    run(env, 4);
+    run(env, 6);
     expect(pancake.done).toBe(true);
     expect(env.collapse.animating).toBe(false);
     expect(pancake.body).toBeDefined();
-    // Pillars threw Debris and dust outward.
-    expect(env.debris.live.length + env.debris.rubble.length).toBeGreaterThan(before);
-    expect(env.collapse.drainBursts().length).toBe(pancake.pillars.length);
-  });
-
-  test("slabs fall rigidly, bottom first, and land one storey apart", () => {
-    const env = setup();
-    blastTarget(env, [3, 10, -10], 5, 2000);
-    const { slabs } = env.collapse.pancakes[0]!;
+    // Each floor's slab ends one metre above the one below.
     const { structure } = env.target;
     const bottom = (mask: Uint8Array) => structure.coords(mask.indexOf(1))[1];
-    slabs.forEach((slab, n) => {
-      expect(slab.start).toBeCloseTo(n * DEFAULT_COLLAPSE.crushStagger);
-      if (n > 0) expect(bottom(slab.mask) - slab.drop).toBe(bottom(slabs[n - 1]!.mask) - slabs[n - 1]!.drop + 1);
-      expect(slabFall(slab, slab.start)).toBe(0);
-      expect(slabFall(slab, slab.start + 10)).toBe(slab.drop);
+    pancake.floors.forEach((floor, n) => {
+      expect(floorFall(pancake, floor)).toBe(floor.drop);
+      const prev = pancake.floors[n - 1];
+      if (prev) expect(bottom(floor.slab) - floor.drop).toBe(bottom(prev.slab) - prev.drop + 1);
     });
+  });
+
+  test("each floor's landing blows out its pillars, one floor after another from the bottom", () => {
+    const env = setup();
+    blastTarget(env, [3, 10, -10], 5, 2000);
+    const pancake = env.collapse.pancakes[0]!;
+    env.collapse.drainBursts();
+    const landedAt: number[] = [];
+    for (let step = 0; !pancake.done && step < 600; step++) {
+      env.world.step(DT);
+      env.collapse.update(DT);
+      const bursts = env.collapse.drainBursts().length;
+      pancake.floors.forEach((floor, n) => {
+        if (floor.landed && landedAt[n] === undefined) landedAt[n] = step;
+      });
+      // Pillars burst only in a step where a floor landed.
+      if (bursts > 0) expect(landedAt).toContain(step);
+      // Until a floor lands, it falls with the block above it.
+      for (const floor of pancake.floors) if (!floor.landed) expect(floorFall(pancake, floor)).toBe(pancake.fallen);
+    }
+    expect(landedAt).toHaveLength(pancake.floors.length);
+    for (let n = 1; n < landedAt.length; n++) {
+      if (pancake.floors[n]!.drop > pancake.floors[n - 1]!.drop) expect(landedAt[n]!).toBeGreaterThan(landedAt[n - 1]!);
+    }
   });
 });
 

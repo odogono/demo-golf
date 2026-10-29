@@ -1,19 +1,19 @@
 import * as THREE from "three";
-import { slabFall, type Collapse, type Fragment, type Slab } from "../damage/collapse";
+import { floorFall, type Collapse, type Floor, type Fragment } from "../damage/collapse";
 import { buildingMesh } from "./building-geometry";
 
 /**
- * Draws Fragments on their bodies and drops each Crush's slabs. Each piece
+ * Draws Fragments on their bodies and drops each Crush's floors. Each piece
  * is meshed from its Cells, without the Bites cut into them, one draw call
  * per piece; they stay drawn once they freeze into Rubble.
  */
 export function createCollapseView(scene: THREE.Scene, collapse: Collapse) {
   const material = new THREE.MeshStandardMaterial({ color: 0xb0aaa0, roughness: 0.9 });
-  const groups = new Map<Fragment | Slab, THREE.Group>();
+  const groups = new Map<Fragment | Floor, THREE.Group>();
 
-  function add(piece: Fragment | Slab): THREE.Group {
-    const { structure } = piece.building;
-    const { position, normal } = buildingMesh({ size: structure.size, alive: piece.mask, cut: new Map() });
+  function meshOf(building: Fragment["building"], alive: Uint8Array): THREE.Mesh {
+    const { structure } = building;
+    const { position, normal } = buildingMesh({ size: structure.size, alive, cut: new Map() });
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.BufferAttribute(position, 3));
     geometry.setAttribute("normal", new THREE.BufferAttribute(normal, 3));
@@ -21,10 +21,17 @@ export function createCollapseView(scene: THREE.Scene, collapse: Collapse) {
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    // A Fragment's grid hangs off its body; a slab's off its Building's origin.
-    if ("offset" in piece) mesh.position.set(...piece.offset);
+    return mesh;
+  }
+
+  /** A Fragment's grid hangs off its body; a floor's, its slab then its pillars, off its Building's origin. */
+  function add(piece: Fragment | Floor): THREE.Group {
     const group = new THREE.Group();
-    group.add(mesh);
+    if ("offset" in piece) {
+      const mesh = meshOf(piece.building, piece.mask);
+      mesh.position.set(...piece.offset);
+      group.add(mesh);
+    } else group.add(meshOf(piece.building, piece.slab), meshOf(piece.building, piece.pillars));
     scene.add(group);
     groups.set(piece, group);
     return group;
@@ -32,11 +39,11 @@ export function createCollapseView(scene: THREE.Scene, collapse: Collapse) {
 
   return {
     update() {
-      const live = new Set<Fragment | Slab>([...collapse.fragments, ...collapse.pancakes.flatMap((p) => p.slabs)]);
+      const live = new Set<Fragment | Floor>([...collapse.fragments, ...collapse.pancakes.flatMap((p) => p.floors)]);
       for (const [piece, group] of groups) {
         if (live.has(piece)) continue;
         scene.remove(group);
-        (group.children[0] as THREE.Mesh).geometry.dispose();
+        for (const mesh of group.children) (mesh as THREE.Mesh).geometry.dispose();
         groups.delete(piece);
       }
       for (const fragment of collapse.fragments) {
@@ -46,9 +53,11 @@ export function createCollapseView(scene: THREE.Scene, collapse: Collapse) {
       }
       for (const pancake of collapse.pancakes) {
         const [ox, oy, oz] = pancake.building.structure.origin;
-        for (const slab of pancake.slabs) {
-          const group = groups.get(slab) ?? add(slab);
-          group.position.set(ox, oy - slabFall(slab, pancake.time), oz);
+        for (const floor of pancake.floors) {
+          const group = groups.get(floor) ?? add(floor);
+          group.position.set(ox, oy - floorFall(pancake, floor), oz);
+          // Its pillars blew out when it landed.
+          group.children[1]!.visible = !floor.landed;
         }
       }
     },

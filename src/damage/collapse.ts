@@ -16,8 +16,8 @@ export type CollapseSettings = {
   minImpulse: number;
   /** Radians per second a Tip starts turning at about its pivot edge. */
   tipSpin: number;
-  /** Seconds between one floor of a Crush giving way and the next. */
-  crushStagger: number;
+  /** Fraction of a Crush's falling speed kept each time a floor lands on the stack. */
+  crushImpactKeep: number;
 };
 
 export const DEFAULT_COLLAPSE: CollapseSettings = {
@@ -25,7 +25,7 @@ export const DEFAULT_COLLAPSE: CollapseSettings = {
   powerPerImpulse: 0.02,
   minImpulse: 1500,
   tipSpin: 0.4,
-  crushStagger: 0.25,
+  crushImpactKeep: 0.35,
 };
 
 /** Seconds after a Fragment's hit before it can cause another. */
@@ -55,29 +55,42 @@ export type Fragment = Piece & {
   lastHit: number;
 };
 
-/** A floor slab of a Crush. It falls rigidly from `start`, `drop` metres, onto the slab below. */
-export type Slab = { building: Building; mask: Uint8Array; start: number; drop: number };
+/**
+ * A floor of a Crush: a slab and the pillars standing on it, up to the next
+ * slab. It falls with the rest of the block until its slab lands `drop`
+ * metres down, on the stack below; the impact blows its pillars out.
+ */
+export type Floor = {
+  building: Building;
+  slab: Uint8Array;
+  pillars: Uint8Array;
+  drop: number;
+  landed: boolean;
+};
 
 /**
- * A Crush, as a scripted animation: from the bottom up, each storey's pillars
- * blow out and the slab they held falls onto the stack below, one floor
- * every `crushStagger` seconds. When the last slab lands, the stack becomes
+ * A Crush, as a scripted chain reaction. The floors above the crushed layer
+ * fall as one block. Each time the lowest still falling floor lands on the
+ * stack, its pillars blow out and the block above, slowed by the impact,
+ * falls on through the gap. When the top floor lands, the stack becomes
  * Rubble with a static body.
  */
 export type Pancake = {
   building: Building;
-  slabs: Slab[];
-  /** Pillar Cells, each with the time it blows out. */
-  pillars: { cell: number; start: number }[];
-  time: number;
+  /** From the bottom up. */
+  floors: Floor[];
+  /** Metres the floors still falling have dropped, and their speed downward. */
+  fallen: number;
+  speed: number;
+  /** Debris each blown-out pillar Cell throws, on average. */
+  debrisShare: number;
   done: boolean;
   body: BodyId | undefined;
 };
 
-/** Metres a slab has fallen `t` seconds after it starts, landing after `drop`. */
-export function slabFall(slab: Slab, t: number): number {
-  const s = Math.max(0, t - slab.start);
-  return Math.min(slab.drop, 0.5 * GRAVITY * s * s);
+/** Metres a floor of `pancake` has fallen so far. */
+export function floorFall(pancake: Pancake, floor: Floor): number {
+  return floor.landed ? floor.drop : pancake.fallen;
 }
 
 /**
@@ -194,10 +207,11 @@ export function createCollapse(
   }
 
   /**
-   * Splits a Crush's falling Cells into slabs and pillars. A layer with at
-   * least half as many Cells as the fullest is a slab; the rest are pillars.
-   * Slab `n`, counting up from the lowest, lands with its bottom `n` metres
-   * above the crushed layer's.
+   * Splits a Crush's falling Cells into floors. A layer with at least half as
+   * many Cells as the fullest is a slab; the rest are pillars, belonging to
+   * the slab below them. Floor `n`, counting up from the lowest, lands with
+   * its slab's bottom `n` metres above the crushed layer's. Pillars below the
+   * lowest slab blow out at once: they gave way in the Crush.
    */
   function pancake(building: Building, layer: number, falling: number[]): Pancake {
     const { structure } = building;
@@ -208,20 +222,31 @@ export function createCollapse(
     }
     const fullest = Math.max(...[...byLayer.values()].map((cells) => cells.length));
     const slabLayers = [...byLayer.keys()].filter((y) => byLayer.get(y)!.length * 2 >= fullest).sort((a, b) => a - b);
-    const slabs = slabLayers.map((y, n) => {
-      const mask = new Uint8Array(structure.count);
-      for (const i of byLayer.get(y)!) mask[i] = 1;
-      return { building, mask, start: n * settings.crushStagger, drop: Math.max(0, y - (layer + n)) };
+    const floors: Floor[] = slabLayers.map((y, n) => {
+      const slab = new Uint8Array(structure.count);
+      for (const i of byLayer.get(y)!) slab[i] = 1;
+      return { building, slab, pillars: new Uint8Array(structure.count), drop: Math.max(0, y - (layer + n)), landed: false };
     });
-    const pillars: Pancake["pillars"] = [];
+    const loose: number[] = [];
+    let pillarCount = 0;
     for (const [y, cells] of byLayer) {
       if (slabLayers.includes(y)) continue;
-      // A pillar blows out as the slab it holds up starts to fall.
-      const above = slabLayers.findIndex((s) => s > y);
-      const start = slabs[above < 0 ? slabs.length - 1 : above]?.start ?? 0;
-      for (const cell of cells) pillars.push({ cell, start });
+      pillarCount += cells.length;
+      const below = slabLayers.findLastIndex((s) => s < y);
+      if (below < 0) loose.push(...cells);
+      else for (const i of cells) floors[below]!.pillars[i] = 1;
     }
-    return { building, slabs, pillars, time: 0, done: false, body: undefined };
+    const result: Pancake = {
+      building,
+      floors,
+      fallen: 0,
+      speed: 0,
+      debrisShare: CRUSH_DEBRIS / Math.max(1, pillarCount),
+      done: false,
+      body: undefined,
+    };
+    for (const cell of loose) blowOut(building, cell, result.debrisShare);
+    return result;
   }
 
   function blowOut(building: Building, cell: number, share: number) {
@@ -237,10 +262,10 @@ export function createCollapse(
   }
 
   function settle(pancake: Pancake) {
-    const children = pancake.slabs.flatMap((slab) =>
-      structureColliders(slab.building.structure, slab.mask).map(({ shape, position }) => ({
+    const children = pancake.floors.flatMap((floor) =>
+      structureColliders(floor.building.structure, floor.slab).map(({ shape, position }) => ({
         shape,
-        position: [position[0], position[1] - slab.drop, position[2]] as Vec3,
+        position: [position[0], position[1] - floor.drop, position[2]] as Vec3,
       })),
     );
     if (children.length > 0) {
@@ -315,14 +340,17 @@ export function createCollapse(
 
       for (const pancake of pancakes) {
         if (pancake.done) continue;
-        const before = pancake.time;
-        pancake.time += dt;
-        for (const { cell, start } of pancake.pillars) {
-          if (start >= before && start < pancake.time) {
-            blowOut(pancake.building, cell, CRUSH_DEBRIS / pancake.pillars.length);
-          }
+        pancake.speed += GRAVITY * dt;
+        pancake.fallen += pancake.speed * dt;
+        for (const floor of pancake.floors) {
+          if (floor.landed) continue;
+          if (pancake.fallen < floor.drop) break;
+          // It hits the stack: its pillars give way and the block above slows.
+          floor.landed = true;
+          floor.pillars.forEach((p, i) => p && blowOut(pancake.building, i, pancake.debrisShare));
+          pancake.speed *= settings.crushImpactKeep;
         }
-        if (pancake.slabs.every((slab) => slabFall(slab, pancake.time) >= slab.drop)) {
+        if (pancake.floors.every((floor) => floor.landed)) {
           pancake.done = true;
           settle(pancake);
         }
