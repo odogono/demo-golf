@@ -5,7 +5,7 @@ import { buildingMesh } from "./building-geometry";
 /**
  * Draws Fragments on their bodies and drops each Crush's floors. Each piece
  * is meshed from its Cells, without the Bites cut into them, one draw call
- * per piece; they stay drawn once they freeze into Rubble.
+ * per piece. Once one comes to rest it is a Building, drawn by `building-view.ts`.
  */
 export function createCollapseView(scene: THREE.Scene, collapse: Collapse) {
   const material = new THREE.MeshStandardMaterial({ color: 0xb0aaa0, roughness: 0.9 });

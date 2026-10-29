@@ -30,6 +30,8 @@ export type Building = {
   structure: Structure;
   /** The static collider for its live Cells; undefined once none are left. */
   body: BodyId | undefined;
+  /** True for a Building made from Rubble that came to rest, rather than one on the Hole. */
+  rubble: boolean;
 };
 
 /** A worker reply, ready to apply: the Building it changed and the Blast that caused it. */
@@ -44,6 +46,7 @@ export function createBuildings(world: PhysicsWorld, port: StructurePort, option
   const buildings: Building[] = [];
   const pending = new Map<number, Blast>();
   const arrived: StructureReply[] = [];
+  const added: Building[] = [];
   let nextBlast = 0;
   port.onReply((reply) => arrived.push(reply));
 
@@ -60,18 +63,22 @@ export function createBuildings(world: PhysicsWorld, port: StructurePort, option
           });
   }
 
+  function add(opts: StructureOptions, rubble: boolean): Building {
+    const id = buildings.length;
+    const building: Building = { id, options: opts, structure: createStructure(opts), body: undefined, rubble };
+    port.send({ type: "create", id, options: opts });
+    rebuildBody(building);
+    buildings.push(building);
+    return building;
+  }
+
   function create(overrides: Partial<StructureOptions> = {}) {
     for (const building of buildings) if (building.body !== undefined) world.removeBody(building.body);
     buildings.length = 0;
     pending.clear();
     arrived.length = 0;
-    options.forEach((o, id) => {
-      const opts = { ...o, ...overrides };
-      const building: Building = { id, options: opts, structure: createStructure(opts), body: undefined };
-      port.send({ type: "create", id, options: opts });
-      rebuildBody(building);
-      buildings.push(building);
-    });
+    added.length = 0;
+    for (const o of options) add({ ...o, ...overrides }, false);
   }
   create();
 
@@ -80,6 +87,21 @@ export function createBuildings(world: PhysicsWorld, port: StructurePort, option
 
     /** Rebuilds every Building undamaged, optionally with new Structure options such as Cell Integrity. */
     reset: create,
+
+    /**
+     * Adds a Building made from Rubble at rest, so it can take Blasts like any
+     * other. `drainAdded` hands it to whatever draws Buildings.
+     */
+    addRubble(opts: StructureOptions): Building {
+      const building = add(opts, true);
+      added.push(building);
+      return building;
+    },
+
+    /** Buildings `addRubble` made since the last call. */
+    drainAdded(): Building[] {
+      return added.splice(0);
+    },
 
     ofBody(body: BodyId): Building | undefined {
       return buildings.find((b) => b.body === body);

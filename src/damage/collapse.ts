@@ -42,8 +42,9 @@ type Piece = { building: Building; cells: number[]; mask: Uint8Array };
 
 /**
  * A Fragment: Cells that left a Structure in a Detach or Tip, now one dynamic
- * body with a compound collider of boxes. It is never evaluated again. Once
- * it sleeps it freezes into Rubble: a static body that stays where it lies.
+ * body with a compound collider of boxes. Once it sleeps it becomes Rubble: a
+ * new Building where it lies, turned to the nearest upright grid, that takes
+ * Blasts like any other.
  */
 export type Fragment = Piece & {
   id: BodyId;
@@ -51,7 +52,6 @@ export type Fragment = Piece & {
   offset: Vec3;
   position: Vec3;
   rotation: Quat;
-  rubble: boolean;
   lastHit: number;
 };
 
@@ -73,7 +73,7 @@ export type Floor = {
  * fall as one block. Each time the lowest still falling floor lands on the
  * stack, its pillars blow out and the block above, slowed by the impact,
  * falls on through the gap. When the top floor lands, the stack becomes
- * Rubble with a static body.
+ * Rubble: a new Building.
  */
 export type Pancake = {
   building: Building;
@@ -85,7 +85,6 @@ export type Pancake = {
   /** Debris each blown-out pillar Cell throws, on average. */
   debrisShare: number;
   done: boolean;
-  body: BodyId | undefined;
 };
 
 /** Metres a floor of `pancake` has fallen so far. */
@@ -161,7 +160,7 @@ export function createCollapse(
       friction: 0.8,
       restitution: 0.05,
     });
-    fragments.push({ ...p, id, offset, position: com, rotation: quat.create(), rubble: false, lastHit: -Infinity });
+    fragments.push({ ...p, id, offset, position: com, rotation: quat.create(), lastHit: -Infinity });
   }
 
   /**
@@ -189,21 +188,45 @@ export function createCollapse(
     return away > 0 ? vec3.negate(out, out) : out;
   }
 
-  function freeze(fragment: Fragment) {
-    fragment.position = world.getPosition(fragment.id);
-    fragment.rotation = world.getRotation(fragment.id);
-    const children = structureColliders(fragment.building.structure, fragment.mask).map((child) => ({
-      ...child,
-      position: vec3.add(vec3.create(), child.position, fragment.offset),
-    }));
-    world.removeBody(fragment.id);
-    fragment.id = world.addBody({
-      shape: { kind: "compound", children },
-      motion: "static",
-      position: fragment.position,
-      rotation: fragment.rotation,
+  /**
+   * Makes Rubble of Cells at rest: a new Building whose grid holds them,
+   * given each Cell's world centre. Centres must lie on one 1 m lattice. A
+   * grid that ends up within half a metre of the ground is set on it.
+   */
+  function rubble(source: Building, cells: number[], centres: Vec3[]) {
+    if (cells.length === 0) return;
+    const min: Vec3 = [Infinity, Infinity, Infinity];
+    for (const c of centres) for (let k = 0; k < 3; k++) min[k] = Math.min(min[k]!, c[k]! - 0.5);
+    const at = centres.map((c) => c.map((v, k) => Math.round(v - 0.5 - min[k]!)) as Vec3);
+    const size: Vec3 = [0, 0, 0];
+    for (const p of at) for (let k = 0; k < 3; k++) size[k] = Math.max(size[k]!, p[k]! + 1);
+    const count = size[0] * size[1] * size[2];
+    const grid = { alive: new Uint8Array(count), mass: new Float32Array(count), integrity: new Float32Array(count) };
+    const { structure } = source;
+    cells.forEach((cell, n) => {
+      const [x, y, z] = at[n]!;
+      const i = x + size[0] * (z + size[2] * y);
+      grid.alive[i] = 1;
+      grid.mass[i] = structure.mass[cell]!;
+      // The Structure zeroes a Cell's Integrity when it leaves, so Rubble starts whole.
+      grid.integrity[i] = structure.fullIntegrity;
     });
-    fragment.rubble = true;
+    if (min[1] < 0.5) min[1] = 0;
+    buildings.addRubble({ ...source.options, origin: min, size, cells: grid });
+  }
+
+  /** Turns a sleeping Fragment into Rubble, snapping its rotation to the nearest axis-aligned one. */
+  function settleFragment(fragment: Fragment) {
+    const turn = nearestUpright(world.getRotation(fragment.id));
+    const position = world.getPosition(fragment.id);
+    const { structure } = fragment.building;
+    const local = vec3.create();
+    const centres = fragment.cells.map((i) => {
+      vec3.add(local, vec3.subtract(local, structure.cellCenter(local, i), structure.origin), fragment.offset);
+      return vec3.add(vec3.create(), position, applyTurn(turn, local));
+    });
+    world.removeBody(fragment.id);
+    rubble(fragment.building, fragment.cells, centres);
   }
 
   /**
@@ -256,7 +279,6 @@ export function createCollapse(
       speed: 0,
       debrisShare: CRUSH_DEBRIS / Math.max(1, pillarCount),
       done: false,
-      body: undefined,
     };
     for (const cell of loose) blowOut(building, cell, result.debrisShare);
     return result;
@@ -274,20 +296,21 @@ export function createCollapse(
     bursts.push({ center: centre, outward: out });
   }
 
+  /** Turns a landed stack of slabs into Rubble. */
   function settle(pancake: Pancake) {
-    const children = pancake.floors.flatMap((floor) =>
-      structureColliders(floor.building.structure, floor.slab).map(({ shape, position }) => ({
-        shape,
-        position: [position[0], position[1] - floor.drop, position[2]] as Vec3,
-      })),
-    );
-    if (children.length > 0) {
-      pancake.body = world.addBody({
-        shape: { kind: "compound", children },
-        motion: "static",
-        position: pancake.building.structure.origin,
+    const { structure } = pancake.building;
+    const cells: number[] = [];
+    const centres: Vec3[] = [];
+    for (const floor of pancake.floors) {
+      floor.slab.forEach((on, i) => {
+        if (!on) return;
+        cells.push(i);
+        const c = structure.cellCenter(vec3.create(), i);
+        c[1] -= floor.drop;
+        centres.push(c);
       });
     }
+    rubble(pancake.building, cells, centres);
   }
 
   return {
@@ -301,7 +324,7 @@ export function createCollapse(
 
     /** Fragments still simulated. */
     get moving() {
-      return fragments.reduce((n, f) => n + (f.rubble ? 0 : 1), 0);
+      return fragments.length;
     },
 
     /** Carries out a Structure's events. Run it on each outcome `buildings.drain` returns. */
@@ -318,7 +341,7 @@ export function createCollapse(
       const hits: Hit[] = [];
       for (const event of contacts.splice(0)) {
         if (event.impulse < settings.minImpulse) continue;
-        const fragment = fragments.find((f) => !f.rubble && (f.id === event.a || f.id === event.b));
+        const fragment = fragments.find((f) => f.id === event.a || f.id === event.b);
         if (!fragment || time - fragment.lastHit < HIT_COOLDOWN) continue;
         const target = buildings.ofBody(fragment.id === event.a ? event.b : event.a);
         if (!target || target === fragment.building) continue;
@@ -338,7 +361,6 @@ export function createCollapse(
 
       for (let i = fragments.length - 1; i >= 0; i--) {
         const fragment = fragments[i]!;
-        if (fragment.rubble) continue;
         if (!world.hasBody(fragment.id)) {
           fragments.splice(i, 1);
           continue;
@@ -348,11 +370,14 @@ export function createCollapse(
         if (fragment.position[1] < -20) {
           world.removeBody(fragment.id);
           fragments.splice(i, 1);
-        } else if (world.isSleeping(fragment.id)) freeze(fragment);
+        } else if (world.isSleeping(fragment.id)) {
+          settleFragment(fragment);
+          fragments.splice(i, 1);
+        }
       }
 
-      for (const pancake of pancakes) {
-        if (pancake.done) continue;
+      for (let p = pancakes.length - 1; p >= 0; p--) {
+        const pancake = pancakes[p]!;
         pancake.speed += GRAVITY * dt;
         pancake.fallen += pancake.speed * dt;
         for (const floor of pancake.floors) {
@@ -366,6 +391,7 @@ export function createCollapse(
         if (pancake.floors.every((floor) => floor.landed)) {
           pancake.done = true;
           settle(pancake);
+          pancakes.splice(p, 1);
         }
       }
       return hits;
@@ -373,12 +399,12 @@ export function createCollapse(
 
     /** True while a Crush is still pancaking. */
     get animating() {
-      return pancakes.some((p) => !p.done);
+      return pancakes.length > 0;
     },
 
+    /** Removes every Fragment and Crush in progress. Rubble already at rest is a Building; `buildings.reset` removes it. */
     clear() {
       for (const f of fragments) world.removeBody(f.id);
-      for (const p of pancakes) if (p.body !== undefined) world.removeBody(p.body);
       fragments.length = 0;
       pancakes.length = 0;
       contacts.length = 0;
@@ -388,3 +414,36 @@ export function createCollapse(
 }
 
 export type Collapse = ReturnType<typeof createCollapse>;
+
+/** A rotation that turns each axis onto another, possibly reversed: row k is where axis k goes. */
+type Turn = [Vec3, Vec3, Vec3];
+
+/** The axis-aligned rotation nearest `rotation`. */
+export function nearestUpright(rotation: Quat): Turn {
+  const turned = ([[1, 0, 0], [0, 1, 0], [0, 0, 1]] as Vec3[]).map((axis) => vec3.transformQuat(vec3.create(), axis, rotation));
+  const snap = (v: Vec3, not: number[]): Vec3 => {
+    let best = -1;
+    for (let k = 0; k < 3; k++) if (!not.includes(k) && (best < 0 || Math.abs(v[k]!) > Math.abs(v[best]!))) best = k;
+    const out: Vec3 = [0, 0, 0];
+    out[best] = Math.sign(v[best]!) || 1;
+    return out;
+  };
+  // Snap the axis nearest vertical first, so the piece keeps its up.
+  const order = [0, 1, 2].sort((a, b) => Math.abs(turned[b]![1]!) - Math.abs(turned[a]![1]!));
+  const result: Vec3[] = [];
+  const used: number[] = [];
+  for (const k of order.slice(0, 2)) {
+    result[k] = snap(turned[k]!, used);
+    used.push(result[k]!.findIndex((v) => v !== 0));
+  }
+  const [a, b] = order as [number, number, number];
+  const c = order[2]!;
+  // The third axis completes a right-handed frame: x × y = z, cyclically.
+  const cross = vec3.cross(vec3.create(), result[a]!, result[b]!);
+  result[c] = (c - a + 3) % 3 === 2 ? cross : vec3.negate(cross, cross);
+  return result as Turn;
+}
+
+function applyTurn([x, y, z]: Turn, v: Vec3): Vec3 {
+  return [x[0] * v[0] + y[0] * v[1] + z[0] * v[2], x[1] * v[0] + y[1] * v[1] + z[1] * v[2], x[2] * v[0] + y[2] * v[1] + z[2] * v[2]];
+}

@@ -36,11 +36,11 @@
 
 **Tip** — When the part of a Structure above a damaged layer topples over a pivot edge.
 
-**Fragment** — A piece that has left a Structure through Detach or Tip and is now governed only by physics. It is never evaluated again.
+**Fragment** — A piece that has left a Structure through Detach or Tip and is governed only by physics until it comes to rest and becomes Rubble.
 
 **Debris** — Small chunks thrown off by a Blast. They collide with the world but never cause a Blast.
 
-**Rubble** — Old Debris or Fragments frozen in place to stay within the physics body budget.
+**Rubble** — What is left at rest. A Fragment or Crush stack at rest becomes a new Building, snapped to the nearest upright grid, that takes Blasts like any other. Old Debris freezes in place to stay within the physics body budget.
 
 **Terrain** — The ground of a Hole. It can be lowered by a Blast but never raised, and it never decides whether a Structure holds or falls.
 

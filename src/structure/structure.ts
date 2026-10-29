@@ -26,6 +26,11 @@ export interface StructureOptions {
   safetyFactor?: number;
   /** How far, in metres, the centre of mass must sit inside a footprint's hull. */
   tipMargin?: number;
+  /**
+   * Builds the grid from these Cells, indexed like the Structure's own,
+   * instead of the procedural building. Rubble uses it to become a Building.
+   */
+  cells?: { alive: Uint8Array; mass: Float32Array; integrity: Float32Array };
 }
 
 export interface BlastResult {
@@ -59,6 +64,7 @@ export function createStructure(options: StructureOptions) {
     integrity: fullIntegrity = 100,
     safetyFactor = 2,
     tipMargin = 0.25,
+    cells,
   } = options;
 
   const nx = Math.round(size[0]);
@@ -92,7 +98,11 @@ export function createStructure(options: StructureOptions) {
   };
   const pillarsX = pillarLines(nx);
   const pillarsZ = pillarLines(nz);
-  for (let y = 0; y < ny; y++) {
+  if (cells) {
+    alive.set(cells.alive);
+    mass.set(cells.mass);
+    integrity.set(cells.integrity);
+  } else for (let y = 0; y < ny; y++) {
     const slab = y % floorHeight === 0 || y === ny - 1;
     for (let z = 0; z < nz; z++) {
       for (let x = 0; x < nx; x++) {
