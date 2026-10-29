@@ -4,7 +4,14 @@ import type { BallType } from "../shot/ball-types";
 
 const MAX_PREVIEW_POINTS = 512;
 
-/** The Tee marker, the ball, the trajectory preview and the power meter. */
+/** Lifts the shadow trail off the ground so it doesn't flicker into it. */
+const TRAIL_Y = 0.03;
+
+/**
+ * The Tee marker, the ball, the trajectory preview and the power meter. Under
+ * the preview runs its shadow trail on the ground, ending in a ring where the
+ * ball would land, so the preview's height can be read from any camera.
+ */
 export function createShotView(scene: THREE.Scene, container: HTMLElement, tee: Vec3) {
   const teeMarker = new THREE.Mesh(
     new THREE.CylinderGeometry(0.4, 0.4, 0.02, 24),
@@ -30,6 +37,24 @@ export function createShotView(scene: THREE.Scene, container: HTMLElement, tee: 
   preview.frustumCulled = false;
   scene.add(preview);
 
+  const trailGeometry = new THREE.BufferGeometry();
+  trailGeometry.setAttribute(
+    "position",
+    new THREE.BufferAttribute(new Float32Array(MAX_PREVIEW_POINTS * 3), 3),
+  );
+  const trail = new THREE.Line(
+    trailGeometry,
+    new THREE.LineDashedMaterial({ color: 0x10200a, dashSize: 0.4, gapSize: 0.3 }),
+  );
+  trail.frustumCulled = false;
+  scene.add(trail);
+  const landing = new THREE.Mesh(
+    new THREE.RingGeometry(0.5, 0.7, 32),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, side: THREE.DoubleSide }),
+  );
+  landing.rotation.x = -Math.PI / 2;
+  scene.add(landing);
+
   const meter = document.createElement("div");
   meter.style.cssText =
     "position:fixed;left:24px;bottom:24px;width:24px;height:160px;border:2px solid #fff;background:#0004";
@@ -54,14 +79,22 @@ export function createShotView(scene: THREE.Scene, container: HTMLElement, tee: 
       ball.position.set(p[0], p[1], p[2]);
     },
     setPreview(points: Vec3[] | undefined) {
-      preview.visible = points !== undefined;
+      preview.visible = trail.visible = landing.visible = points !== undefined;
       if (!points) return;
       const attribute = previewGeometry.getAttribute("position") as THREE.BufferAttribute;
+      const shadow = trailGeometry.getAttribute("position") as THREE.BufferAttribute;
       const n = Math.min(points.length, MAX_PREVIEW_POINTS);
-      for (let i = 0; i < n; i++) attribute.setXYZ(i, points[i]![0], points[i]![1], points[i]![2]);
-      attribute.needsUpdate = true;
+      for (let i = 0; i < n; i++) {
+        attribute.setXYZ(i, points[i]![0], points[i]![1], points[i]![2]);
+        shadow.setXYZ(i, points[i]![0], TRAIL_Y, points[i]![2]);
+      }
+      attribute.needsUpdate = shadow.needsUpdate = true;
       previewGeometry.setDrawRange(0, n);
+      trailGeometry.setDrawRange(0, n);
       preview.computeLineDistances();
+      trail.computeLineDistances();
+      const last = points[n - 1]!;
+      landing.position.set(last[0], TRAIL_Y, last[2]);
     },
     setPower(power: number) {
       fill.style.height = `${power * 100}%`;

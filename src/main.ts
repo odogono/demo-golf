@@ -1,5 +1,8 @@
 import GUI from "lil-gui";
 import { vec3, type Vec3 } from "math";
+import { createCameraDirector } from "./camera/director";
+import { DEFAULT_CAMERA_FX, createShake, createSlowMotion, hitsSoon, shakeAmount, type Box } from "./camera/fx";
+import { DEFAULT_RIGS } from "./camera/rigs";
 import { createBuildings, type BlastOutcome, type StructurePort } from "./damage/buildings";
 import { createCollapse, DEFAULT_COLLAPSE } from "./damage/collapse";
 import { createDamage, DEFAULT_DAMAGE } from "./damage/damage";
@@ -12,6 +15,7 @@ import { createDust } from "./fx/dust";
 import { createShotInput } from "./input/shot-input";
 import { createFixedLoop } from "./loop";
 import { createCrashcatWorld } from "./physics/crashcat";
+import { createCameraView } from "./render/camera-view";
 import { createScene } from "./render/scene";
 import { createShotView } from "./render/shot-view";
 import { createStructureOverlay } from "./render/structure-overlay";
@@ -35,7 +39,26 @@ const BUILDINGS: StructureOptions[] = [
   { origin: [8, 0, -12], size: [6, 12, 6] },
 ];
 
+/** Each Building's whole extent: slow motion starts when the ball is about to enter one. */
+const BOXES: Box[] = BUILDINGS.map(({ origin = [0, 0, 0], size }) => ({
+  min: vec3.clone(origin),
+  max: vec3.add(vec3.create(), origin, size),
+}));
+/** ImpactCam circles the middle of all the Buildings, at ground level. */
+const IMPACT_CENTRE: Vec3 = (() => {
+  const c = vec3.create();
+  for (const b of BOXES) vec3.add(c, c, vec3.lerp(vec3.create(), b.min, b.max, 0.5));
+  vec3.scale(c, c, 1 / BOXES.length);
+  c[1] = 0;
+  return c;
+})();
+
 const rig = createScene(document.body);
+const director = createCameraDirector({ ...DEFAULT_RIGS });
+const cameraFx = { ...DEFAULT_CAMERA_FX };
+const shake = createShake(cameraFx);
+const slowMotion = createSlowMotion(cameraFx);
+const cameraView = createCameraView(rig.camera, rig.renderer.domElement);
 const world = createCrashcatWorld();
 world.addBody({ shape: { kind: "box", halfExtents: [100, 0.5, 100] }, motion: "static", position: [0, -0.5, 0] });
 
@@ -66,8 +89,13 @@ function showBuildings() {
 }
 showBuildings();
 
-// Debug: press G to show the Structure grids, P to toggle auto mode.
+// V switches the aiming view. Debug: G shows the Structure grids, P toggles auto mode, O frees the camera to orbit.
 window.addEventListener("keydown", (e) => {
+  if (e.key === "v") director.toggleView();
+  if (e.key === "o") {
+    cameraView.toggleOrbit();
+    input.enabled = !cameraView.orbiting;
+  }
   if (e.key === "p") {
     auto.enabled = !auto.enabled;
     for (const c of autoGui.controllersRecursive()) c.updateDisplay();
@@ -86,6 +114,7 @@ let previewPower = 0.6;
 let strokes = 0;
 const previous: Vec3 = [TEE[0], TEE[1] + ballType.radius, TEE[2]];
 const current: Vec3 = vec3.clone(previous);
+const velocity = vec3.create();
 const shown = vec3.create();
 
 function resetBall() {
@@ -96,6 +125,8 @@ function resetBall() {
   vec3.copy(previous, current);
   view.setBallType(ballType);
   view.setBallVisible(true);
+  director.reset();
+  slowMotion.reset();
 }
 
 function shoot(power: number) {
@@ -106,6 +137,7 @@ function shoot(power: number) {
   inFlight = true;
   flightTime = 0;
   strokes++;
+  director.shoot();
 }
 
 const input = createShotInput(rig.renderer.domElement, meter, {
@@ -170,6 +202,9 @@ const loop = createFixedLoop((dt) => {
   for (const { blast } of [...damage.update(dt), ...collapse.update(dt)]) {
     const big = blast.radius > 2;
     dust.puff(blast.center, blast.outward, big ? 80 : 24, big ? 2.5 : 1);
+    const distance = rig.camera.position.distanceTo({ x: blast.center[0], y: blast.center[1], z: blast.center[2] });
+    shake.add(shakeAmount(blast.radius, blast.power, distance, cameraFx));
+    director.impact(IMPACT_CENTRE);
   }
   for (const { center, outward } of collapse.drainBursts()) dust.puff(center, outward, 6, 1.5);
   debris.update();
@@ -185,7 +220,11 @@ const loop = createFixedLoop((dt) => {
     return;
   }
   if (damage.ball === undefined) view.setBallVisible(false);
-  else vec3.copy(current, world.getPosition(damage.ball));
+  else {
+    vec3.copy(current, world.getPosition(damage.ball));
+    vec3.copy(velocity, world.getLinearVelocity(damage.ball));
+    if (hitsSoon(current, velocity, BOXES, cameraFx.slowLead, ballType.drag)) slowMotion.trigger();
+  }
   flightTime += dt;
   // Auto mode doesn't wait for Debris and Fragments to settle, only for the ball.
   const ballDone =
@@ -234,6 +273,34 @@ autoGui.add(auto, "enabled").name("Fire automatically");
 autoGui.add(auto, "delay", 0, 5, 0.1).name("Delay between shots (s)");
 autoGui.add(auto, "explosiveChance", 0, 1, 0.05).name("Explosive chance");
 
+const camera = gui.addFolder("Camera").close();
+const rigs = director.settings;
+camera.add(rigs, "behindDistance", 1, 20, 0.5).name("Behind: distance");
+camera.add(rigs, "behindHeight", 0.5, 10, 0.1).name("Behind: height");
+camera.add(rigs, "behindLookAhead", 5, 60, 1).name("Behind: look ahead");
+camera.add(rigs, "behindFov", 30, 90, 1).name("Behind: FOV");
+camera.add(rigs, "raisedElevation", 20, 85, 1).name("Raised: angle °");
+camera.add(rigs, "raisedDistance", 10, 80, 1).name("Raised: distance");
+camera.add(rigs, "raisedLookAhead", 0, 40, 1).name("Raised: look ahead");
+camera.add(rigs, "raisedFov", 30, 90, 1).name("Raised: FOV");
+camera.add(rigs, "flightElevation", 0, 85, 1).name("Flight: angle °");
+camera.add(rigs, "flightDistance", 3, 40, 0.5).name("Flight: distance");
+camera.add(rigs, "flightFov", 30, 90, 1).name("Flight: FOV");
+camera.add(rigs, "impactRadius", 10, 80, 1).name("Impact: radius");
+camera.add(rigs, "impactHeight", 2, 60, 1).name("Impact: height");
+camera.add(rigs, "impactOrbitSpeed", 0, 45, 1).name("Impact: orbit °/s");
+camera.add(rigs, "impactFov", 30, 90, 1).name("Impact: FOV");
+camera.add(rigs, "blendTime", 0, 2, 0.05).name("Blend time (s)");
+camera.add(cameraFx, "shakeOffset", 0, 2, 0.05).name("Shake: offset (m)");
+camera.add(cameraFx, "shakeReference", 10, 2000, 10).name("Shake: full at r × power");
+camera.add(cameraFx, "shakeFalloff", 1, 100, 1).name("Shake: halves at (m)");
+camera.add(cameraFx, "shakeDecay", 0.1, 5, 0.1).name("Shake: decay /s");
+camera.add(cameraFx, "slowScale", 0.05, 1, 0.05).name("Slow-mo: speed");
+camera.add(cameraFx, "slowHold", 0, 2, 0.05).name("Slow-mo: hold (s)");
+camera.add(cameraFx, "slowEase", 0, 1, 0.05).name("Slow-mo: ease (s)");
+camera.add(cameraFx, "slowLead", 0, 1, 0.05).name("Slow-mo: lead (s)");
+
+const shakeOffset = vec3.create();
 const previewVelocity = vec3.create();
 let last = performance.now();
 let frames = 0;
@@ -243,7 +310,8 @@ rig.renderer.setAnimationLoop((now) => {
   const elapsed = (now - last) / 1000;
   last = now;
   frameWork = 0;
-  const alpha = loop.advance(elapsed);
+  const timeScale = slowMotion.update(elapsed);
+  const alpha = loop.advance(elapsed * timeScale);
   frameTimes.push(frameWork);
   if (frameTimes.length > 60) frameTimes.shift();
   frames++;
@@ -255,7 +323,7 @@ rig.renderer.setAnimationLoop((now) => {
   for (const ms of buildingViews.drain()) biteMs = ms;
   debrisView.update();
   collapseView.update();
-  dust.update(Math.min(elapsed, 0.1));
+  dust.update(Math.min(elapsed, 0.1) * timeScale);
 
   view.setBallPosition(vec3.lerp(shown, previous, current, alpha));
   view.setPower(meter.power);
@@ -269,10 +337,19 @@ rig.renderer.setAnimationLoop((now) => {
   const mean = frameTimes.reduce((a, b) => a + b, 0) / Math.max(1, frameTimes.length);
   const worst = Math.max(0, ...frameTimes);
   view.setLabel(
-    `${ballType.name} ball · Strokes ${strokes} · A/D or drag: aim · W/S: loft · hold Space: power · 1/2: ball · G: grid · P: auto${auto.enabled ? " (on)" : ""}\n` +
+    `${ballType.name} ball · Strokes ${strokes} · A/D or drag: aim · W/S: loft · hold Space: power · 1/2: ball · G: grid · V: view · O: orbit · P: auto${auto.enabled ? " (on)" : ""}\n` +
+      `${cameraView.orbiting ? "Orbit" : director.mode}${director.mode === "AimCam" ? ` (${director.view})` : ""} · ` +
       `${fps.toFixed(0)} fps · physics + Structure ${mean.toFixed(2)} ms/frame (max ${worst.toFixed(2)}) · ` +
       `Debris ${debris.live.length}, Fragments ${collapse.moving}, Rubble ${debris.rubble.length + collapse.fragments.length - collapse.moving} · worker: Structure ${structureMs.toFixed(1)} ms, Bite ${biteMs.toFixed(1)} ms`,
   );
+
+  const pose = director.update(Math.min(elapsed, 0.1), {
+    tee: TEE,
+    yaw: input.aim.yaw,
+    ball: inFlight ? shown : undefined,
+    velocity: inFlight ? velocity : undefined,
+  });
+  cameraView.update(pose, shake.update(shakeOffset, Math.min(elapsed, 0.1)));
 
   rig.renderer.render(rig.scene, rig.camera);
 });

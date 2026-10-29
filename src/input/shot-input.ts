@@ -20,6 +20,7 @@ export function createShotInput(target: HTMLElement, meter: PowerMeter, handlers
   let aim: Aim = { yaw: 0, loft: 0.35 };
   const down = new Set<string>();
   let dragging = false;
+  let enabled = true;
 
   window.addEventListener("keydown", (e) => {
     down.add(e.code);
@@ -46,7 +47,7 @@ export function createShotInput(target: HTMLElement, meter: PowerMeter, handlers
   });
   target.addEventListener("pointerup", () => (dragging = false));
   target.addEventListener("pointermove", (e) => {
-    if (!dragging) return;
+    if (!dragging || !enabled) return;
     aim = clampAim({ yaw: aim.yaw - e.movementX * DRAG_RATE, loft: aim.loft - e.movementY * DRAG_RATE });
   });
 
@@ -57,15 +58,20 @@ export function createShotInput(target: HTMLElement, meter: PowerMeter, handlers
     get aim() {
       return aim;
     },
+    /** While off, neither keys nor the mouse change the aim, so a debug camera can use the mouse. */
+    set enabled(value: boolean) {
+      enabled = value;
+    },
     set aim(value: Aim) {
       aim = clampAim(value);
     },
     update(dt: number) {
+      meter.update(dt);
+      if (!enabled) return;
       aim = clampAim({
         yaw: aim.yaw + axis(["KeyA", "ArrowLeft"], ["KeyD", "ArrowRight"]) * KEY_RATE * dt,
         loft: aim.loft + axis(["KeyW", "ArrowUp"], ["KeyS", "ArrowDown"]) * KEY_RATE * dt,
       });
-      meter.update(dt);
     },
   };
 }
