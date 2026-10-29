@@ -16,7 +16,11 @@
 
 **Structure** — The grid of Cells that models a building and alone decides whether it holds, crumbles or falls.
 
-**Cell** — A 1 m cube of a Structure, with mass, Integrity and Capacity.
+**Cell** — A 1 m cube of a Structure, with a Material, mass, Integrity and Capacity.
+
+**Material** — What a Cell is made of, such as stone, brick, timber or glass. It sets the Cell's mass, Integrity and Capacity, and the look of its Debris. One building can mix Materials.
+
+**Blueprint** — The layout of a building's Cells and their Materials, from which its Structure is built. Different kinds of building differ only in their Blueprint, never in how they are destroyed.
 
 **Integrity** — How much Blast damage a Cell can take before it is destroyed.
 
@@ -38,6 +42,12 @@
 
 **Rubble** — Old Debris or Fragments frozen in place to stay within the physics body budget.
 
-**Height** — The height of the highest Cell in a Structure that is still connected to the ground.
+**Terrain** — The ground of a Hole. It can be lowered by a Blast but never raised, and it never decides whether a Structure holds or falls.
+
+**Foundation** — The fixed, indestructible plinth a Structure stands on. It is not made of Cells, is never damaged and stays after its Structure has fallen.
+
+**Crater** — A dip that a ball's Blast leaves in the Terrain where its radius reaches the ground. It never reaches into a Foundation, and it lasts until the Hole ends.
+
+**Height** — The height, above the top of its Foundation, of the highest Cell in a Structure that is still connected to the ground.
 
 **Settled** — The state in which every body is asleep, or the settle timeout has passed, so the next Shot is allowed.
