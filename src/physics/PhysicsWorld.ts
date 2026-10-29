@@ -22,6 +22,8 @@ export type BodyDesc = {
   position?: Vec3;
   rotation?: Quat;
   linearVelocity?: Vec3;
+  /** Radians per second about each world axis. */
+  angularVelocity?: Vec3;
   /** kg; computed from the shape if omitted. */
   mass?: number;
   friction?: number;
@@ -59,6 +61,8 @@ export interface PhysicsWorld {
   applyImpulse(id: BodyId, impulse: Vec3): void;
   /** Returns a function that unsubscribes the listener. */
   onContact(listener: ContactListener): () => void;
+  /** True when a dynamic body has come to rest and stopped being simulated. */
+  isSleeping(id: BodyId): boolean;
   /** True when every dynamic body is asleep. The settle timeout belongs to the game loop. */
   isSettled(): boolean;
 }

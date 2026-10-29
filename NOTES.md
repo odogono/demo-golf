@@ -32,7 +32,17 @@
 - A Building's mesh is built per Cell. A Bite subtracts its jagged blob from each Cell the Blast damaged, one small CSG operation per Cell, and Cells that leave the Structure simply drop out of the mesh. So a Bite never cuts where the grid hasn't changed, and the cuts are cheap, but each Bite ends in straight lines at the faces of the Cells it touched.
 - Each Building collides as one static compound of boxes merged from its live Cells (132 boxes for the 8×20×8 Target), rebuilt whenever Cells leave. Bites never change it.
 - The body cap counts dynamic bodies only: Debris and the ball, and Fragments from M5. The static Buildings and ground don't count.
-- Until M5, Cells that leave in a Detach, Crush or Tip just vanish behind a cloud of dust.
+
+## Collapse (M5)
+
+- `src/damage/collapse.ts` carries out the Structure's events. A Detach or Tip becomes one Fragment: a dynamic compound of the same merged boxes as the Building's collider, built from just its Cells, placed at their centre of mass. Crashcat works out its mass from the boxes, at 1000 kg per Cell, so Fragment impulses run into the tens of thousands of kg⋅m/s; `powerPerImpulse` (0.02) and `minImpulse` (1500) are sized for that.
+- A Tip starts turning at `tipSpin` about its pivot edge, away from the Cells still standing on its layer, so it falls the way it leans rather than balancing on the edge.
+- A Crush has no physics while it plays. Its falling Cells split into floors: a slab (a layer with at least half as many Cells as the fullest) and the pillars standing on it. The floors fall as one block under gravity. When the lowest one still falling lands on the stack, one metre above the slab below, its pillars blow out as Debris and dust and the block above keeps `crushImpactKeep` of its speed, so each floor's supports go only when the floor above hits. Once the top floor lands, the stack gets one static body. A Shot waits for it to finish.
+- A Fragment freezes into Rubble, a static body in the same pose, only once Crashcat puts it to sleep. Its hits only count against other Buildings, never the one it came from.
+- Fragments are drawn from their Cells without the Bites cut into them.
+- The tipping margin is a Structure option, so changing it in the GUI rebuilds the Buildings.
+- Auto mode (P, or the GUI) aims with `src/shot/auto-aim.ts`: a grid search over loft and power through `predictTrajectory`, about 1000 predictions and a few ms per Shot. It ignores collisions, so a shot can clip the other building. It ends a Shot once the ball is used up, asleep or 3 s in, without waiting for Debris to settle.
+- `docs/media/m5-tip.gif` and `m5-crush.gif` show both collapses, recorded with headless Chrome.
 
 ## Performance
 

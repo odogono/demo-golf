@@ -157,6 +157,7 @@ export function createCrashcatWorld(gravity: Vec3 = [0, -9.81, 0]): PhysicsWorld
         motionQuality: desc.ccd ? MotionQuality.LINEAR_CAST : MotionQuality.DISCRETE,
       });
       if (desc.linearVelocity) rigidBody.setLinearVelocity(world, created, [...desc.linearVelocity]);
+      if (desc.angularVelocity) rigidBody.setAngularVelocity(world, created, [...desc.angularVelocity]);
       return created.id;
     },
     removeBody(id) {
@@ -194,6 +195,9 @@ export function createCrashcatWorld(gravity: Vec3 = [0, -9.81, 0]): PhysicsWorld
     },
     applyImpulse(id, impulse) {
       rigidBody.addImpulse(world, body(id), [...impulse]);
+    },
+    isSleeping(id) {
+      return body(id).sleeping;
     },
     onContact(l) {
       listeners.add(l);

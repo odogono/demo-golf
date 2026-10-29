@@ -6,9 +6,10 @@ import type { Structure } from "./structure";
  * The collider for a Structure's live Cells, as few boxes as a greedy merge
  * finds: runs of Cells along x, then runs of equal rows along z. Positions are
  * relative to the Structure's origin. Bites never change it; only Cells
- * leaving the Structure do.
+ * leaving the Structure do. Pass `alive` to collide only some Cells, such as
+ * a Fragment's.
  */
-export function structureColliders(structure: Structure): CompoundChild[] {
+export function structureColliders(structure: Structure, alive: Uint8Array = structure.alive): CompoundChild[] {
   const [nx, ny, nz] = structure.size;
   const children: CompoundChild[] = [];
   for (let y = 0; y < ny; y++) {
@@ -17,9 +18,9 @@ export function structureColliders(structure: Structure): CompoundChild[] {
     for (let z = 0; z < nz; z++) {
       const runs: number[] = [];
       for (let x = 0; x < nx; x++) {
-        if (!structure.alive[structure.index(x, y, z)]) continue;
+        if (!alive[structure.index(x, y, z)]) continue;
         const start = x;
-        while (x + 1 < nx && structure.alive[structure.index(x + 1, y, z)]) x++;
+        while (x + 1 < nx && alive[structure.index(x + 1, y, z)]) x++;
         runs.push(start, x + 1);
       }
       rows.push(runs);

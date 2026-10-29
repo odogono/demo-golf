@@ -60,13 +60,13 @@ export function createBuildings(world: PhysicsWorld, port: StructurePort, option
           });
   }
 
-  function create(integrity?: number) {
+  function create(overrides: Partial<StructureOptions> = {}) {
     for (const building of buildings) if (building.body !== undefined) world.removeBody(building.body);
     buildings.length = 0;
     pending.clear();
     arrived.length = 0;
     options.forEach((o, id) => {
-      const opts = integrity === undefined ? o : { ...o, integrity };
+      const opts = { ...o, ...overrides };
       const building: Building = { id, options: opts, structure: createStructure(opts), body: undefined };
       port.send({ type: "create", id, options: opts });
       rebuildBody(building);
@@ -78,7 +78,7 @@ export function createBuildings(world: PhysicsWorld, port: StructurePort, option
   return {
     list: buildings as readonly Building[],
 
-    /** Rebuilds every Building undamaged, optionally with a new Cell Integrity. */
+    /** Rebuilds every Building undamaged, optionally with new Structure options such as Cell Integrity. */
     reset: create,
 
     ofBody(body: BodyId): Building | undefined {
