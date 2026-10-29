@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import { floorFall, type Collapse, type Floor, type Fragment } from "../damage/collapse";
+import { createBlockMaterial } from "./block-material";
 import { buildingMesh } from "./building-geometry";
+import { trimmedCells } from "./trim";
 
 /**
  * Draws Fragments on their bodies and drops each Crush's floors. Each piece
@@ -8,15 +10,16 @@ import { buildingMesh } from "./building-geometry";
  * per piece. Once one comes to rest it is a Building, drawn by `building-view.ts`.
  */
 export function createCollapseView(scene: THREE.Scene, collapse: Collapse) {
-  const material = new THREE.MeshStandardMaterial({ color: 0xb0aaa0, roughness: 0.9 });
+  const material = createBlockMaterial();
   const groups = new Map<Fragment | Floor, THREE.Group>();
 
   function meshOf(building: Fragment["building"], alive: Uint8Array): THREE.Mesh {
     const { structure } = building;
-    const { position, normal } = buildingMesh({ size: structure.size, alive, cut: new Map() });
+    const { position, normal, colour } = buildingMesh({ size: structure.size, colour: structure.colour, alive, cut: trimmedCells(structure) });
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.BufferAttribute(position, 3));
     geometry.setAttribute("normal", new THREE.BufferAttribute(normal, 3));
+    geometry.setAttribute("color", new THREE.BufferAttribute(colour, 3));
     geometry.computeBoundingSphere();
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;

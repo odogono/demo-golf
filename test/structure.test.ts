@@ -142,3 +142,26 @@ describe("tipping", () => {
     expect(narrow(1.5)).toBe(true);
   });
 });
+
+describe("the lighthouse Blueprint", () => {
+  const lighthouse = () => createStructure({ size: [9, 24, 9], blueprint: "lighthouse" });
+
+  test("stands undamaged at its full Height", () => {
+    const s = lighthouse();
+    expect(s.evaluate()).toEqual([]);
+    expect(s.height()).toBe(24);
+  });
+
+  test("has a hollow shaft between its floors", () => {
+    const s = lighthouse();
+    expect(s.alive[s.index(4, 2, 4)]).toBe(0);
+    expect(s.alive[s.index(4, 4, 4)]).toBe(1);
+  });
+
+  test("mixes Materials, each with its own Integrity", () => {
+    const s = lighthouse();
+    const toughness = new Set<number>();
+    for (let i = 0; i < s.count; i++) if (s.alive[i]) toughness.add(s.maxIntegrity[i]!);
+    expect(toughness.size).toBe(3);
+  });
+});

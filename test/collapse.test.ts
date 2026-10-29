@@ -122,6 +122,28 @@ describe("Crush", () => {
     });
   });
 
+  test("a lighthouse's Crush stack keeps its round shape as Rubble", () => {
+    const world = createCrashcatWorld();
+    world.addBody({ shape: { kind: "box", halfExtents: [100, 0.5, 100] }, motion: "static", position: [0, -0.5, 0] });
+    const buildings = createBuildings(world, inlineStructures(), [{ origin: [-4.5, 0, -14.5], size: [9, 24, 9], blueprint: "lighthouse" }]);
+    const env = { world, buildings, debris: createDebris(world, { cap: 150 }), target: buildings.list[0]!, neighbour: buildings.list[0]! };
+    const collapse = createCollapse(world, buildings, env.debris, { ...DEFAULT_COLLAPSE });
+    blastTarget({ ...env, collapse }, [2, 5, -7], 5, 3000);
+    expect(collapse.pancakes).toHaveLength(1);
+    run({ ...env, collapse }, 8);
+    const [rubble] = buildings.drainAdded();
+    expect(rubble?.rubble).toBe(true);
+    const { trims, origin } = rubble!.structure;
+    expect(trims.size).toBeGreaterThan(0);
+    // Its round pieces stay round about the lighthouse's own axis.
+    for (const pieces of trims.values()) {
+      for (const { centre } of pieces) {
+        expect(origin[0] + centre[0]).toBeCloseTo(0);
+        expect(origin[2] + centre[1]).toBeCloseTo(-10);
+      }
+    }
+  });
+
   test("each floor's landing blows out its pillars, one floor after another from the bottom", () => {
     const env = setup();
     blastTarget(env, [3, 10, -10], 5, 2000);

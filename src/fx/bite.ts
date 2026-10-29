@@ -20,7 +20,7 @@ export type Bite = {
 };
 
 export type CsgRequest =
-  | { type: "create"; id: number; generation: number; size: [number, number, number]; alive: Uint8Array }
+  | { type: "create"; id: number; generation: number; size: [number, number, number]; alive: Uint8Array; colour: Uint32Array; cut?: Map<number, CellMesh> }
   | { type: "update"; id: number; generation: number; alive: Uint8Array; bite?: Bite };
 
 export type CsgReply = {
@@ -29,6 +29,7 @@ export type CsgReply = {
   generation: number;
   position: Float32Array;
   normal: Float32Array;
+  colour: Float32Array;
   /** Milliseconds spent cutting and merging. */
   ms: number;
 };
@@ -63,7 +64,7 @@ export function jaggedBlob(center: readonly number[], radius: number, seed: numb
   return blob;
 }
 
-function toGeometry(mesh: CellMesh): THREE.BufferGeometry {
+export function toGeometry(mesh: CellMesh): THREE.BufferGeometry {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(mesh.position, 3));
   geometry.setAttribute("normal", new THREE.BufferAttribute(mesh.normal, 3));
@@ -104,7 +105,7 @@ export function createBiteCutter() {
   return {
     handle(request: CsgRequest): CsgReply | undefined {
       if (request.type === "create") {
-        shapes.set(request.id, { size: request.size, alive: request.alive, cut: new Map(), generation: request.generation });
+        shapes.set(request.id, { size: request.size, alive: request.alive, colour: request.colour, cut: new Map(request.cut), generation: request.generation });
         return undefined;
       }
       const shape = shapes.get(request.id);

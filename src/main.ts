@@ -25,7 +25,7 @@ import { BALL_TYPES, type BallType } from "./shot/ball-types";
 import { createPowerMeter } from "./shot/power-meter";
 import { TEE, launchBall } from "./shot/shot";
 import { predictTrajectory } from "./shot/trajectory";
-import type { StructureOptions } from "./structure/structure";
+import { BUILDINGS } from "./hole";
 import { startWorker, workerPort } from "./worker-port";
 
 /** Seconds a Shot may run before the next is allowed, even if the ball still moves. */
@@ -33,11 +33,6 @@ const SETTLE_TIMEOUT = 8;
 /** In auto mode, seconds a Shot may run; it ends sooner once the ball is used up or at rest. */
 const AUTO_SHOT_TIMEOUT = 3;
 
-/** The Target, then a Neighbour. */
-const BUILDINGS: StructureOptions[] = [
-  { origin: [-4, 0, -14], size: [8, 20, 8] },
-  { origin: [8, 0, -12], size: [6, 12, 6] },
-];
 
 /** Each Building's whole extent: slow motion starts when the ball is about to enter one. */
 const BOXES: Box[] = BUILDINGS.map(({ origin = [0, 0, 0], size }) => ({
@@ -290,6 +285,7 @@ const rigs = director.settings;
 camera.add(rigs, "behindDistance", 1, 20, 0.5).name("Behind: distance");
 camera.add(rigs, "behindHeight", 0.5, 10, 0.1).name("Behind: height");
 camera.add(rigs, "behindLookAhead", 5, 60, 1).name("Behind: look ahead");
+camera.add(rigs, "behindLookHeight", 0, 15, 0.5).name("Behind: look height");
 camera.add(rigs, "behindFov", 30, 90, 1).name("Behind: FOV");
 camera.add(rigs, "raisedElevation", 20, 85, 1).name("Raised: angle °");
 camera.add(rigs, "raisedDistance", 10, 80, 1).name("Raised: distance");

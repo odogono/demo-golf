@@ -55,7 +55,7 @@ export function createDamage(world: PhysicsWorld, buildings: Buildings, debris: 
     for (const building of reached) buildings.blast(building, blast);
     if (reached.length > 0) {
       const count = 5 + Math.round(10 * Math.min(1, blast.power / 150));
-      debris.spawn(blast.center, blast.outward, count);
+      debris.spawn(blast.center, blast.outward, count, reached[0]!.structure.materialNear(blast.center)?.debris);
     }
     return { blast, buildings: reached };
   }

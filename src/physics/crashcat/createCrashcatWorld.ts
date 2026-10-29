@@ -5,6 +5,7 @@ import {
   addObjectLayer,
   box,
   compound,
+  convexHull,
   createCollisionEstimationResult,
   createWorld,
   createWorldSettings,
@@ -41,12 +42,20 @@ const MOTION: Record<MotionKind, MotionType> = {
   kinematic: MotionType.KINEMATIC,
 };
 
+/** Hulls are slow to build, so one built from the same points array is reused. */
+const hullShapes = new WeakMap<number[], Shape>();
+
 function createShape(desc: ShapeDesc, motion: MotionKind): Shape {
   switch (desc.kind) {
     case "box":
       return box.create({ halfExtents: [...desc.halfExtents] });
     case "sphere":
       return sphere.create({ radius: desc.radius });
+    case "convexHull":
+      // A small convex radius, so thin pieces such as a railing keep their shape.
+      let hull = hullShapes.get(desc.points);
+      if (!hull) hullShapes.set(desc.points, (hull = convexHull.create({ positions: desc.points, convexRadius: 0.02 })));
+      return hull;
     case "compound": {
       const children = desc.children.map((child) => ({
         shape: createShape(child.shape, motion),

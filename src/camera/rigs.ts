@@ -15,6 +15,8 @@ export type RigSettings = {
   behindDistance: number;
   behindHeight: number;
   behindLookAhead: number;
+  /** Height of the point it looks at, so tall Targets stay in view with the ball. */
+  behindLookHeight: number;
   behindFov: number;
   /** AimCam, raised view: high behind the Tee, looking down the aim line. */
   raisedElevation: number;
@@ -39,6 +41,7 @@ export const DEFAULT_RIGS: RigSettings = {
   behindDistance: 6,
   behindHeight: 2.5,
   behindLookAhead: 20,
+  behindLookHeight: 3,
   behindFov: 60,
   raisedElevation: 50,
   raisedDistance: 55,
@@ -90,6 +93,7 @@ export function aimPose(out: Pose, tee: Vec3, yaw: number, view: AimView, s: Rig
   vec3.scaleAndAdd(out.position, tee, dir, -s.behindDistance);
   out.position[1] += s.behindHeight;
   vec3.scaleAndAdd(out.target, tee, dir, s.behindLookAhead);
+  out.target[1] += s.behindLookHeight;
   out.fov = s.behindFov;
   return out;
 }
