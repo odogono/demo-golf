@@ -1,0 +1,4 @@
+#!/bin/sh
+# Checks the commit message's format. See docs/agents/commits.md.
+# `bun install` turns this on through core.hooksPath.
+exec bun "$(git rev-parse --show-toplevel)/tools/commits/check.ts" message "$1"
