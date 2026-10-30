@@ -471,6 +471,13 @@ export function createStructure(options: StructureOptions) {
       }
     },
 
+    /** How many Cells are still in the Structure. */
+    cells(): number {
+      let n = 0;
+      for (let i = 0; i < count; i++) n += alive[i]!;
+      return n;
+    },
+
     /** Metres from the ground to the top of the highest Cell still connected to it. */
     height(): number {
       const seen = groundConnected();

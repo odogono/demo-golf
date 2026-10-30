@@ -57,8 +57,7 @@ export function runScenario(scenario: Scenario, seed = 1): ScenarioResult {
   const collapse = createCollapse(world, buildings, debris, { ...DEFAULT_COLLAPSE }, random);
   const target: Building = buildings.list[0]!;
   const startHeight = target.structure.height();
-  const liveCells = () => target.structure.alive.reduce((a, b) => a + b, 0);
-  const startCells = liveCells();
+  const startCells = target.structure.cells();
 
   let thrown = 0;
   const spawn = debris.spawn;
@@ -84,7 +83,6 @@ export function runScenario(scenario: Scenario, seed = 1): ScenarioResult {
       timedOut: false,
     };
     thrown = 0;
-    const heightBefore = target.structure.height();
 
     if ("blast" in step) {
       buildings.blast(target, { ...step.blast, outward: [0, 0, 1] });
@@ -139,10 +137,10 @@ export function runScenario(scenario: Scenario, seed = 1): ScenarioResult {
     result.debris = thrown;
     result.height = target.structure.height();
     result.heightLeft = Math.round((result.height / startHeight) * 100) / 100;
-    result.destroyed = Math.round((1 - liveCells() / startCells) * 100) / 100;
-    // Won by this Shot only if it brought the Target down; a Blast step can't win.
-    const winHeight = startHeight * DEFAULT_ROUND.winBelow;
-    if (!won && result.kind === "shot" && heightBefore >= winHeight && result.height < winHeight) {
+    const destroyed = 1 - target.structure.cells() / startCells;
+    result.destroyed = Math.round(destroyed * 100) / 100;
+    // Won on the first Shot that leaves enough Destroyed; a Blast step can't win (ADR 0004).
+    if (!won && result.kind === "shot" && destroyed >= DEFAULT_ROUND.winDestroyed) {
       won = true;
       result.wonOnStroke = strokes;
     }
