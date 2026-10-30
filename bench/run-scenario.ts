@@ -37,13 +37,20 @@ export type StepResult = {
   wonOnStroke?: number;
 };
 
+/** The main-thread phases of one simulated frame, timed in milliseconds. */
+export type FramePhases = { apply: number; step: number; damage: number; collapse: number; debris: number };
+
+/** The slowest frames of a run: total cost and its phases, with the step and second they fell in. */
+export type SlowFrame = FramePhases & { total: number; step: number; time: number };
+
 export type ScenarioResult = { name: string; startHeight: number; steps: StepResult[] };
 
 /**
  * Plays a Scenario headlessly, the way the game would, with a fixed seed so
- * the same Scenario gives the same numbers. The Structure runs inline.
+ * the same Scenario gives the same numbers. The Structure runs inline. Pass
+ * `slowest` to collect the five slowest frames into it.
  */
-export function runScenario(scenario: Scenario, seed = 1): ScenarioResult {
+export function runScenario(scenario: Scenario, seed = 1, slowest?: SlowFrame[]): ScenarioResult {
   const random = seeded(seed);
   const world = createCrashcatWorld();
   world.addBody({ shape: { kind: "box", halfExtents: [100, 0.5, 100] }, motion: "static", position: [0, -0.5, 0] });
@@ -98,6 +105,13 @@ export function runScenario(scenario: Scenario, seed = 1): ScenarioResult {
     const rest = createRestCheck();
     let time = 0;
     for (;;) {
+      const phases: FramePhases = { apply: 0, step: 0, damage: 0, collapse: 0, debris: 0 };
+      let mark = performance.now();
+      const lap = (phase: keyof FramePhases) => {
+        const now = performance.now();
+        phases[phase] += now - mark;
+        mark = now;
+      };
       for (const outcome of buildings.drain()) {
         result.cells.blast += outcome.reply.result.destroyed.length;
         for (const event of outcome.reply.events) {
@@ -108,12 +122,23 @@ export function runScenario(scenario: Scenario, seed = 1): ScenarioResult {
         }
         collapse.apply(outcome);
       }
+      lap("apply");
       world.step(DT);
+      lap("step");
       if (damage.update().length > 0) result.hit = true;
+      lap("damage");
       collapse.update(DT);
+      lap("collapse");
       debris.update();
       buildings.drainAdded();
+      lap("debris");
       time += DT;
+      if (slowest) {
+        const total = phases.apply + phases.step + phases.damage + phases.collapse + phases.debris;
+        slowest.push({ ...phases, total, step: index, time });
+        slowest.sort((a, b) => b.total - a.total);
+        slowest.length = Math.min(slowest.length, 5);
+      }
 
       if (damage.ball !== undefined) {
         const position = world.getPosition(damage.ball);

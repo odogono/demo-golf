@@ -1,6 +1,6 @@
-import { quat, vec3, type Quat, type Vec3 } from "math";
+import { quat, vec3, type Mat3, type Quat, type Vec3 } from "math";
 import type { BodyId, CompoundChild, ContactEvent, PhysicsWorld } from "../physics/PhysicsWorld";
-import { structureColliders } from "../structure/colliders";
+import { cellHulls, structureColliders, type CellHulls } from "../structure/colliders";
 import { AXIS_FRAME, type Ornament, type Trim } from "../structure/blueprint";
 import type { StructureEvent } from "../structure/structure";
 import type { BlastOutcome, Building, Buildings } from "./buildings";
@@ -212,6 +212,9 @@ export function createCollapse(
       ornaments: new Map<number, Ornament[]>(),
     };
     const { structure } = source;
+    // Hulls turn as one with the Cell, so the source's, rotated, collide the same.
+    const rotation = turnRotation(turn);
+    const hulls = new Map<number, CellHulls>();
     cells.forEach((cell, n) => {
       const [x, y, z] = at[n]!;
       const i = x + size[0] * (z + size[2] * y);
@@ -227,11 +230,13 @@ export function createCollapse(
       const move = { turn, from: [was[0] + 0.5, was[1] + 0.5, was[2] + 0.5] as Vec3, to: [x + 0.5, y + 0.5, z + 0.5] as Vec3 };
       const trim = structure.trims.get(cell);
       if (trim) grid.trims.set(i, trim.map((t) => turnTrim(t, move)));
+      const hull = cellHulls(structure, cell);
+      if (hull) hulls.set(i, { pieces: hull.pieces, rotation: hull.rotation ? quat.multiply(quat.create(), rotation, hull.rotation) : rotation });
       const ornaments = structure.ornaments.get(cell);
       if (ornaments) grid.ornaments.set(i, ornaments.map((o) => turnOrnament(o, turn)));
     });
     if (min[1] < 0.5) min[1] = 0;
-    buildings.addRubble({ ...source.options, origin: min, size, cells: grid });
+    buildings.addRubble({ ...source.options, origin: min, size, cells: grid }, hulls);
   }
 
   /** Turns a sleeping Fragment into Rubble, snapping its rotation to the nearest axis-aligned one. */
@@ -543,6 +548,11 @@ export function nearestUpright(rotation: Quat): Turn {
   const cross = vec3.cross(vec3.create(), result[a]!, result[b]!);
   result[c] = (c - a + 3) % 3 === 2 ? cross : vec3.negate(cross, cross);
   return result as Turn;
+}
+
+/** The rotation a Turn makes: its columns are where x, y and z go. */
+export function turnRotation([x, y, z]: Turn): Quat {
+  return quat.normalize(quat.create(), quat.fromMat3(quat.create(), [...x, ...y, ...z] as Mat3));
 }
 
 export function applyTurn([x, y, z]: Turn, v: Vec3): Vec3 {
