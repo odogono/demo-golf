@@ -36,11 +36,15 @@
 
 **Capacity** — How much mass above it a Cell can carry before it is crushed. It falls as Integrity falls.
 
+**Support** — A Cell resting on a Cell that carries load down to the ground.
+
+**Reach** — How far a Cell can be from Support, through its own layer, and still hold itself up. It is set by the Cell's Material.
+
 **Blast** — A single damage event on a Structure, defined by a centre, radius and power. Every kind of damage is a Blast, including ball impacts and Fragment impacts.
 
 **Bite** — The visible hole cut into a building's mesh to show a Blast. It only shows damage and never decides anything.
 
-**Detach** — When Cells are no longer connected to the ground and leave the Structure.
+**Detach** — When Cells are no longer held up and leave the Structure: cut off from the ground, or beyond Reach of Support.
 
 **Crush** — When Cells fail under load and the floors above them pancake downward.
 
