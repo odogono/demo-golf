@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { floorFall, type Collapse, type Floor, type Fragment } from "../damage/collapse";
 import { createBlockMaterial } from "./block-material";
 import { buildingMesh } from "./building-geometry";
+import { ornamentedCells } from "./ornament";
 import { trimmedCells } from "./trim";
 
 /**
@@ -15,7 +16,7 @@ export function createCollapseView(scene: THREE.Scene, collapse: Collapse) {
 
   function meshOf(building: Fragment["building"], alive: Uint8Array): THREE.Mesh {
     const { structure } = building;
-    const { position, normal, colour } = buildingMesh({ size: structure.size, colour: structure.colour, alive, cut: trimmedCells(structure) });
+    const { position, normal, colour } = buildingMesh({ size: structure.size, colour: structure.colour, alive, cut: trimmedCells(structure), ornaments: ornamentedCells(structure) });
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.BufferAttribute(position, 3));
     geometry.setAttribute("normal", new THREE.BufferAttribute(normal, 3));

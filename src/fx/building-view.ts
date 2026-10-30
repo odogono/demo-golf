@@ -4,6 +4,7 @@ import type { Port } from "../worker-port";
 import type { CsgReply, CsgRequest } from "./bite";
 import { createBlockMaterial } from "./block-material";
 import { buildingMesh } from "./building-geometry";
+import { ornamentedCells } from "./ornament";
 import { trimmedCells } from "./trim";
 
 /** A Bite's radius as a fraction of its Blast's, at full power. */
@@ -36,14 +37,14 @@ export function createBuildingViews(scene: THREE.Scene, port: Port<CsgRequest, C
 
   function add({ id, structure }: Building) {
     const mesh = new THREE.Mesh(new THREE.BufferGeometry(), material);
-    const { position, normal, colour } = buildingMesh({ size: structure.size, colour: structure.colour, alive: structure.alive, cut: trimmedCells(structure) });
+    const { position, normal, colour } = buildingMesh({ size: structure.size, colour: structure.colour, alive: structure.alive, cut: trimmedCells(structure), ornaments: ornamentedCells(structure) });
     setGeometry(mesh, position, normal, colour);
     mesh.position.set(...structure.origin);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     scene.add(mesh);
     meshes[id] = mesh;
-    port.send({ type: "create", id, generation, size: [...structure.size], alive: structure.alive.slice(), colour: structure.colour, cut: trimmedCells(structure) });
+    port.send({ type: "create", id, generation, size: [...structure.size], alive: structure.alive.slice(), colour: structure.colour, cut: trimmedCells(structure), ornaments: ornamentedCells(structure) });
   }
 
   return {

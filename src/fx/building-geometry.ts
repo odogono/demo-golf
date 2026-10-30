@@ -7,6 +7,8 @@
  */
 
 export type CellMesh = { position: Float32Array; normal: Float32Array };
+/** An Ornament's triangles, with each vertex's own paint as 0xRRGGBB. */
+export type OrnamentMesh = CellMesh & { colour: Uint32Array };
 
 export type BuildingShape = {
   size: readonly [number, number, number];
@@ -15,6 +17,8 @@ export type BuildingShape = {
   colour: Uint32Array;
   /** Triangles of the Cells trimmed to their Blueprint's shape or cut by Bites; every other live Cell is intact. */
   cut: Map<number, CellMesh>;
+  /** Triangles of the Ornaments on Cells, drawn while their Cell is alive and never cut. */
+  ornaments?: Map<number, OrnamentMesh>;
 };
 
 // Each face: its outward normal and four corners, counter-clockwise from outside.
@@ -66,7 +70,7 @@ function linear(c: number): number {
 }
 
 /** Merges every live Cell into one non-indexed triangle list, with each vertex painted its Cell's colour. */
-export function buildingMesh({ size: [nx, ny, nz], alive, colour, cut }: BuildingShape): CellMesh & { colour: Float32Array } {
+export function buildingMesh({ size: [nx, ny, nz], alive, colour, cut, ornaments }: BuildingShape): CellMesh & { colour: Float32Array } {
   const index = (x: number, y: number, z: number) => x + nx * (z + nz * y);
   const intact = (x: number, y: number, z: number) =>
     x >= 0 && x < nx && y >= 0 && y < ny && z >= 0 && z < nz && alive[index(x, y, z)] === 1 && !cut.has(index(x, y, z));
@@ -74,7 +78,7 @@ export function buildingMesh({ size: [nx, ny, nz], alive, colour, cut }: Buildin
   let floats = 0;
   for (let i = 0; i < alive.length; i++) {
     if (!alive[i]) continue;
-    floats += cut.get(i)?.position.length ?? 6 * 6 * 3;
+    floats += (cut.get(i)?.position.length ?? 6 * 6 * 3) + (ornaments?.get(i)?.position.length ?? 0);
   }
   const position = new Float32Array(floats);
   const normal = new Float32Array(floats);
@@ -109,6 +113,13 @@ export function buildingMesh({ size: [nx, ny, nz], alive, colour, cut }: Buildin
           }
         }
         paint(start, o, colour[i]!);
+        const extra = ornaments?.get(i);
+        if (extra) {
+          position.set(extra.position, o);
+          normal.set(extra.normal, o);
+          for (let v = 0; v < extra.colour.length; v++) paint(o + v * 3, o + v * 3 + 3, extra.colour[v]!);
+          o += extra.position.length;
+        }
       }
     }
   }

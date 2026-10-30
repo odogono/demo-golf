@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { Brush, Evaluator, INTERSECTION, SUBTRACTION } from "three-bvh-csg";
-import type { Trim } from "../structure/blueprint";
+import { AXIS_FRAME, type Trim } from "../structure/blueprint";
 import type { Structure } from "../structure/structure";
 import { toGeometry } from "./bite";
 import { cellBox, type CellMesh } from "./building-geometry";
@@ -24,8 +24,36 @@ function frustum(centre: [number, number], y0: number, y1: number, r0: number, r
   return brush;
 }
 
-/** One piece of a Cell's shape: its cube cut to the piece's frustum, less its hollow. */
+/**
+ * One piece of a Cell's shape: its cube cut to the piece's frustum, less its
+ * hollow. It is cut standing up in the Trim's own frame, then turned onto its axis.
+ */
 function trimPiece(x: number, y: number, z: number, trim: Trim): CellMesh {
+  const frame = AXIS_FRAME[trim.axis ?? "y"];
+  const cell = [x, y, z];
+  const mesh = uprightPiece(cell[frame[0]]!, cell[frame[1]]!, cell[frame[2]]!, trim);
+  return frame === AXIS_FRAME.y ? mesh : toAxis(mesh, frame);
+}
+
+/**
+ * Moves a mesh built in a Trim's own frame onto its axis. Each frame other
+ * than the vertical swaps two axes, a mirror, so every triangle is rewound.
+ */
+function toAxis({ position, normal }: CellMesh, frame: readonly [number, number, number]): CellMesh {
+  const out = { position: new Float32Array(position.length), normal: new Float32Array(normal.length) };
+  for (let t = 0; t < position.length; t += 9) {
+    for (const [to, from] of [[0, 0], [1, 2], [2, 1]] as const) {
+      for (let k = 0; k < 3; k++) {
+        out.position[t + to * 3 + frame[k]!] = position[t + from * 3 + k]!;
+        out.normal[t + to * 3 + frame[k]!] = normal[t + from * 3 + k]!;
+      }
+    }
+  }
+  return out;
+}
+
+/** A piece standing on the vertical axis, at Cell (x, y, z). */
+function uprightPiece(x: number, y: number, z: number, trim: Trim): CellMesh {
   if (!evaluator) {
     evaluator = new Evaluator();
     evaluator.attributes = ["position", "normal"];

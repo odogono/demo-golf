@@ -1,7 +1,7 @@
 import { vec3, type Vec3 } from "math";
 import { quickhull2 } from "math/geometry";
 import { polygon2 } from "math/shapes";
-import { BLUEPRINTS, MATERIAL_NAMES, MATERIALS, type BlueprintName, type Trim } from "./blueprint";
+import { BLUEPRINTS, MATERIAL_NAMES, MATERIALS, type BlueprintName, type Ornament, type Trim } from "./blueprint";
 
 /**
  * A Structure is a grid of 1 m Cells indexed by (x, y, z), with y up. Cell
@@ -42,6 +42,7 @@ export interface StructureOptions {
     material: Uint8Array;
     colour: Uint32Array;
     trims?: Map<number, Trim[]>;
+    ornaments?: Map<number, Ornament[]>;
   };
 }
 
@@ -95,6 +96,8 @@ export function createStructure(options: StructureOptions) {
   const colour = new Uint32Array(count);
   /** The true shapes of Cells that only partly fill their cubes. */
   const trims = new Map<number, Trim[]>();
+  /** Details drawn on Cells, which nothing but the renderer sees (ADR 0002). */
+  const ornaments = new Map<number, Ornament[]>();
   const baseCapacity = new Float32Array(count);
   const layerDamaged = new Uint8Array(ny);
 
@@ -116,6 +119,7 @@ export function createStructure(options: StructureOptions) {
     material.set(cells.material);
     colour.set(cells.colour);
     for (const [i, t] of cells.trims ?? []) trims.set(i, t);
+    for (const [i, o] of cells.ornaments ?? []) ornaments.set(i, o);
   } else {
     const plan = BLUEPRINTS[blueprint]({ size: [nx, ny, nz], floorHeight, pillarSpacing, slabMass, pillarMass });
     for (let y = 0; y < ny; y++) {
@@ -129,6 +133,7 @@ export function createStructure(options: StructureOptions) {
           material[i] = MATERIAL_NAMES.indexOf(cell.material);
           colour[i] = cell.colour;
           if (cell.trim) trims.set(i, cell.trim);
+          if (cell.ornaments) ornaments.set(i, cell.ornaments);
           mass[i] = cell.mass ?? m.mass;
           maxIntegrity[i] = fullIntegrity * m.toughness;
           integrity[i] = maxIntegrity[i]!;
@@ -361,6 +366,7 @@ export function createStructure(options: StructureOptions) {
     material,
     colour,
     trims,
+    ornaments,
     fullIntegrity,
     index,
     coords,
