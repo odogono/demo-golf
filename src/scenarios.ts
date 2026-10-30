@@ -1,4 +1,5 @@
 import type { Vec3 } from "math";
+import { LIGHTHOUSE } from "./hole";
 import type { BallTypeId } from "./shot/ball-types";
 import type { StructureOptions } from "./structure/structure";
 
@@ -26,10 +27,12 @@ export const SCENARIOS: Scenario[] = [
   },
   {
     name: "lighthouse",
-    building: { origin: [-4.5, 0, -14.5], size: [9, 24, 9], blueprint: "lighthouse" },
+    building: LIGHTHOUSE,
     steps: [
-      { blast: { center: [0, 6, -7], radius: 1.5, power: 60 } },
+      // A standard ball's Blast low on the shaft only bites it.
       { shot: { from: [0, 0, 4], at: [0, 3, -7], ball: "standard" } },
+      // One the size of an explosive ball's takes out a side of a storey, and the tower Tips.
+      { blast: { center: [0, 2.5, -7.5], radius: 3, power: 150 } },
       { shot: { from: [0, 0, 4], at: [0, 2, -7], ball: "explosive" } },
     ],
   },

@@ -175,7 +175,15 @@ describe("the lighthouse Blueprint", () => {
     const s = lighthouse();
     const toughness = new Set<number>();
     for (let i = 0; i < s.count; i++) if (s.alive[i]) toughness.add(s.maxIntegrity[i]!);
-    expect(toughness.size).toBe(3);
+    expect(toughness.size).toBe(2);
+  });
+
+  test("Tips when one side of a low storey is blown out, with a tipMargin of 2", () => {
+    const s = createStructure({ size: [9, 24, 9], blueprint: "lighthouse", tipMargin: 2 });
+    s.applyBlast([4.5, 2.5, 7], 3, 150);
+    const tip = s.evaluate().find((e) => e.kind === "tip");
+    expect(tip).toBeDefined();
+    expect(s.height()).toBeLessThan(4);
   });
 });
 

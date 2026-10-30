@@ -128,7 +128,8 @@ describe("Crush", () => {
     const buildings = createBuildings(world, inlineStructures(), [{ origin: [-4.5, 0, -14.5], size: [9, 24, 9], blueprint: "lighthouse" }]);
     const env = { world, buildings, debris: createDebris(world, { cap: 150 }), target: buildings.list[0]!, neighbour: buildings.list[0]! };
     const collapse = createCollapse(world, buildings, env.debris, { ...DEFAULT_COLLAPSE });
-    blastTarget({ ...env, collapse }, [2, 5, -7], 5, 3000);
+    // Weakening the whole ring evenly, from its axis, Crushes it rather than Tipping it.
+    blastTarget({ ...env, collapse }, [0, 5, -10], 3, 200);
     expect(collapse.pancakes).toHaveLength(1);
     run({ ...env, collapse }, 8);
     const [rubble] = buildings.drainAdded();

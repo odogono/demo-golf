@@ -188,7 +188,9 @@ type Piece = Omit<Trim, "centre">;
  * red and white bands two metres tall. On top sit a gallery with a lip and a
  * railing, a glass lantern, a red cone roof and a spike. Every part is round
  * about the vertical axis through the middle of `size`, and its Cells carry
- * that true shape. It needs `size` about 9 × 24 × 9.
+ * that true shape. The shaft is stone, strong enough that losing one side of
+ * a storey doesn't Crush the rest of it, so the tower Tips instead when given
+ * a `tipMargin` near 2 (#37). It needs `size` about 9 × 24 × 9.
  */
 export function lighthouseBlueprint({ size: [nx, ny, nz], floorHeight }: FrameOptions): Blueprint {
   const centre: [number, number] = [nx / 2, nz / 2];
@@ -207,7 +209,7 @@ export function lighthouseBlueprint({ size: [nx, ny, nz], floorHeight }: FrameOp
     if (y < galleryY) {
       const ring: Piece = { outer: shaft(y), outerTop: shaft(y + 1) };
       if (y % floorHeight !== 0) Object.assign(ring, { inner: shaft(y) - wall, innerTop: shaft(y + 1) - wall });
-      return [{ material: "brick", colour: Math.floor((y - 1) / 2) % 2 === 0 ? WHITE : RED, pieces: [ring] }];
+      return [{ material: "stone", colour: Math.floor((y - 1) / 2) % 2 === 0 ? WHITE : RED, pieces: [ring] }];
     }
     if (y === galleryY) return [{ material: "stone", colour: NAVY, pieces: [{ outer: shaftTop }, { outer: lip, bottom: 0.6 }] }];
     if (y < galleryY + 4) {
