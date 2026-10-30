@@ -14,13 +14,15 @@ export type Material = {
   strength: number;
   /** Colour of the Debris it throws off. */
   debris: number;
+  /** Metres a Cell can be from Support, through its own layer, and still hold itself up (ADR 0005). */
+  reach: number;
 };
 
 export const MATERIALS = {
-  concrete: { mass: 1, toughness: 1, strength: 1, debris: 0x9a948a },
-  brick: { mass: 1, toughness: 0.4, strength: 0.6, debris: 0xb5523b },
-  stone: { mass: 1.5, toughness: 1.2, strength: 1, debris: 0x8f8a80 },
-  glass: { mass: 0.4, toughness: 0.3, strength: 0.8, debris: 0xd6eef5 },
+  concrete: { mass: 1, toughness: 1, strength: 1, debris: 0x9a948a, reach: 10 },
+  brick: { mass: 1, toughness: 0.4, strength: 0.6, debris: 0xb5523b, reach: 7 },
+  stone: { mass: 1.5, toughness: 1.2, strength: 1, debris: 0x8f8a80, reach: 7 },
+  glass: { mass: 0.4, toughness: 0.3, strength: 0.8, debris: 0xd6eef5, reach: 2 },
 } as const satisfies Record<string, Material>;
 
 export type MaterialName = keyof typeof MATERIALS;
