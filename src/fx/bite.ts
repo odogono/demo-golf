@@ -21,7 +21,7 @@ export type Bite = {
 };
 
 export type CsgRequest =
-  | { type: "create"; id: number; generation: number; size: [number, number, number]; alive: Uint8Array; colour: Uint32Array; cut?: Map<number, CellMesh>; ornaments?: Map<number, OrnamentMesh> }
+  | { type: "create"; id: number; generation: number; size: [number, number, number]; alive: Uint8Array; colour: Uint32Array; cut?: Map<number, CellMesh>; ornaments?: Map<number, OrnamentMesh>; clear?: Uint8Array }
   | { type: "update"; id: number; generation: number; alive: Uint8Array; bite?: Bite };
 
 export type CsgReply = {
@@ -31,6 +31,7 @@ export type CsgReply = {
   position: Float32Array;
   normal: Float32Array;
   colour: Float32Array;
+  clearFrom: number;
   /** Milliseconds spent cutting and merging. */
   ms: number;
 };
@@ -94,7 +95,7 @@ export function createBiteCutter() {
   return {
     handle(request: CsgRequest): CsgReply | undefined {
       if (request.type === "create") {
-        shapes.set(request.id, { size: request.size, alive: request.alive, colour: request.colour, cut: new Map(request.cut), ornaments: request.ornaments, generation: request.generation });
+        shapes.set(request.id, { size: request.size, alive: request.alive, colour: request.colour, cut: new Map(request.cut), ornaments: request.ornaments, clear: request.clear, generation: request.generation });
         return undefined;
       }
       const shape = shapes.get(request.id);

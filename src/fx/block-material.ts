@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import type { BuildingMesh } from "./building-geometry";
 
 /** Blocks are half a metre each way, so each 1 m Cell holds whole blocks. */
 const BRICK = [0.5, 0.5] as const;
@@ -10,7 +11,40 @@ const BRICK = [0.5, 0.5] as const;
  * break off. Works in the mesh's own space, which is the Structure's grid.
  */
 export function createBlockMaterial(): THREE.MeshStandardMaterial {
-  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 });
+  return laid(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }));
+}
+
+/** Glass and other see-through Cells: smooth, glossy and partly clear, without mortar. */
+export function createClearMaterial(): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    roughness: 0.1,
+    metalness: 0.1,
+    transparent: true,
+    opacity: 0.4,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+}
+
+/** Both materials a Building is drawn with, in the order `buildingGeometry` groups its triangles. */
+export function createBuildingMaterials(): THREE.Material[] {
+  return [createBlockMaterial(), createClearMaterial()];
+}
+
+/** A Building's mesh as geometry, its solid triangles drawn with the first material and its see-through ones with the second. */
+export function buildingGeometry({ position, normal, colour, clearFrom }: BuildingMesh): THREE.BufferGeometry {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(position, 3));
+  geometry.setAttribute("normal", new THREE.BufferAttribute(normal, 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(colour, 3));
+  geometry.addGroup(0, clearFrom / 3, 0);
+  geometry.addGroup(clearFrom / 3, (position.length - clearFrom) / 3, 1);
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+function laid(material: THREE.MeshStandardMaterial): THREE.MeshStandardMaterial {
   material.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
       .replace("#include <common>", "#include <common>\nvarying vec3 vBlockPos;\nvarying vec3 vBlockNormal;")

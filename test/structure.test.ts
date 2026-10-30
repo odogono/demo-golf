@@ -208,13 +208,13 @@ describe("the glass office Blueprint", () => {
     const s = office();
     expect(s.evaluate()).toEqual([]);
     expect(s.height()).toBe(21);
-    expect(MATERIAL_NAMES[s.material[s.index(4, 4, 4)]!]).toBe("concrete");
-    expect(MATERIAL_NAMES[s.material[s.index(1, 4, 4)]!]).toBe("glass");
+    expect(MATERIAL_NAMES[s.material[s.index(4, 5, 4)]!]).toBe("concrete");
+    expect(MATERIAL_NAMES[s.material[s.index(1, 5, 4)]!]).toBe("glass");
   });
 
   test("sheds the glass across one face of a storey and the core still carries the floors above", () => {
     const s = office();
-    for (let y = 4; y <= 5; y++) {
+    for (let y = 5; y <= 6; y++) {
       for (let x = 0; x < 9; x++) {
         for (let z = 5; z < 9; z++) {
           const i = s.index(x, y, z);

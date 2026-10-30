@@ -369,77 +369,130 @@ const MULLION = 0xf2e3c6;
 const CORE = 0xb9b4aa;
 
 /**
- * A slender round office tower on a stone plinth. A concrete core rises the
- * full height; a floor plate every `floorHeight` metres reaches out from it
- * to a curved glass curtain wall, ringed with fine cream mullions (Ornaments).
- * A blue dome with a rooftop vent caps it. The glass hangs off the plates and
- * the core carries the load, so a hit sheds glass and leaves the core standing.
- * It needs `size` about 9 × 21 × 9.
+ * A slender office tower on a stone plinth, square in plan with rounded
+ * corners and gently bowed faces. A round concrete core rises the full height;
+ * a floor plate every `floorHeight` metres reaches out from it past a clear
+ * glass curtain wall, as a bold cream band. Chunky cream mullions (Ornaments)
+ * divide the glass. The ground storey is a cream colonnade around glass. A
+ * flat blue cap overhangs the top, with a vent. The glass hangs between the
+ * plates and the core carries most of the load, so a hit sheds glass and
+ * leaves the core standing. It needs `size` about 9 × 21 × 9.
  */
 export function glassOfficeBlueprint({ size: [nx, ny, nz], floorHeight }: FrameOptions): Blueprint {
   const centre: [number, number] = [nx / 2, nz / 2];
-  const plinth = Math.min(nx, nz) / 2;
-  const facade = plinth - 1;
-  const glass = 0.35;
-  const core = 1.6;
-  const dome = ny - 2;
-  const mullions = 20;
+  /** Half the width across the faces, the corners' radius, and the radius the faces bow out on. */
+  const half = Math.min(nx, nz) / 2 - 1;
+  const cornerRadius = 1.2;
+  const faceRadius = 12;
+  // Each corner's centre, on the diagonal, where its circle meets the faces' circles tangentially.
+  const d = (() => {
+    const k = faceRadius - half;
+    // d² + (d + k)² = (faceRadius - cornerRadius)²
+    const c = k * k - (faceRadius - cornerRadius) ** 2;
+    return (-2 * k + Math.sqrt(4 * k * k - 8 * c)) / 4;
+  })();
+  /** Where the faces give way to the corners, as an angle off each face's middle. */
+  const faceSpan = Math.atan2(faceRadius * (d / Math.hypot(d, d + faceRadius - half)), half - faceRadius + (faceRadius * (d + faceRadius - half)) / Math.hypot(d, d + faceRadius - half));
 
-  /** Fine upright mullions where they cross Cell (x, z), on the face of the glass. */
-  function mullionsIn(x: number, z: number): Ornament[] {
-    const out: Ornament[] = [];
-    for (let k = 0; k < mullions; k++) {
-      const a = (k / mullions) * Math.PI * 2;
-      const px = centre[0] + (facade + 0.02) * Math.cos(a) - x;
-      const pz = centre[1] + (facade + 0.02) * Math.sin(a) - z;
-      if (px >= 0 && px < 1 && pz >= 0 && pz < 1) out.push({ kind: "cylinder", centre: [px, pz], radius: 0.05, bottom: 0, top: 1, colour: MULLION });
-    }
-    return out;
+  /** The arc of the plan's outline nearest the direction `angle` from the middle: its centre and radius. */
+  function arc(angle: number): { at: [number, number]; radius: number } {
+    const quarter = Math.round(angle / (Math.PI / 2));
+    const off = angle - quarter * (Math.PI / 2);
+    const [ux, uz] = [Math.cos(quarter * (Math.PI / 2)), Math.sin(quarter * (Math.PI / 2))];
+    if (Math.abs(off) <= faceSpan) return { at: [centre[0] - ux * (faceRadius - half), centre[1] - uz * (faceRadius - half)], radius: faceRadius };
+    const side = Math.sign(off);
+    // The corner between this face and the next one round.
+    const [vx, vz] = [-uz * side, ux * side];
+    return { at: [centre[0] + (ux + vx) * d, centre[1] + (uz + vz) * d], radius: cornerRadius };
+  }
+  const arcOf = (x: number, z: number) => arc(Math.atan2(z + 0.5 - centre[1], x + 0.5 - centre[0]));
+
+  /** Where the outline, grown by `grow`, crosses the ray from the middle at `angle`. */
+  function outlineAt(angle: number, grow: number): [number, number] {
+    const { at, radius } = arc(angle);
+    const [ux, uz] = [Math.cos(angle), Math.sin(angle)];
+    const [ax, az] = [at[0] - centre[0], at[1] - centre[1]];
+    const b = ux * ax + uz * az;
+    const t = b + Math.sqrt(b * b - (ax * ax + az * az) + (radius + grow) ** 2);
+    return [centre[0] + ux * t, centre[1] + uz * t];
   }
 
-  /** Cell (x, z) cut to the disc or ring `piece` about the tower's axis, if it reaches it. */
-  function cut(x: number, z: number, piece: Piece): Trim[] | undefined {
+  /** Cell (x, z) cut to the outline grown by `outer`, less the outline grown by `inner`, if any of it is left. */
+  function band(x: number, z: number, outer: number, inner?: number, piece: Omit<Piece, "outer" | "inner"> = {}): Trim[] | undefined {
+    const { at, radius } = arcOf(x, z);
+    const { near, far } = reach(x, z, at);
+    if (near >= radius + outer - SLIVER) return undefined;
+    if (inner !== undefined && far <= radius + inner + SLIVER) return undefined;
+    const top = Math.max(piece.outerTop ?? 0, 0);
+    if (far <= radius + outer && inner === undefined && piece.top === undefined && top === 0) return [];
+    const trim: Trim = { centre: at, outer: radius + outer, ...piece };
+    if (piece.outerTop !== undefined) trim.outerTop = radius + piece.outerTop;
+    if (inner !== undefined) trim.inner = radius + inner;
+    return [trim];
+  }
+  /** Cell (x, z) cut to a disc of `radius` about the middle. */
+  function disc(x: number, z: number, radius: number): Trim[] | undefined {
     const { near, far } = reach(x, z, centre);
-    const outer = Math.max(piece.outer, piece.outerTop ?? piece.outer);
-    if (near >= outer - SLIVER || far <= (piece.inner ?? 0) + SLIVER) return undefined;
-    const whole = far <= Math.min(piece.outer, piece.outerTop ?? piece.outer) && near >= (piece.inner ?? 0) && piece.top === undefined;
-    return whole ? [] : [{ centre, ...piece }];
+    if (near >= radius - SLIVER) return undefined;
+    return far <= radius ? [] : [{ centre, outer: radius }];
   }
+
+  const glass = 0.3;
+  const posts = (count: number, grow: number) => Array.from({ length: count }, (_, k) => outlineAt(((k + 0.5) / count) * Math.PI * 2, grow));
+  const mullions = posts(16, 0.04);
+  const columns = posts(12, -0.5 - glass / 2);
+  /** Upright cream posts from `points` that stand in Cell (x, z). */
+  function postsIn(points: [number, number][], x: number, z: number, radius: number): Ornament[] {
+    return points
+      .filter(([px, pz]) => px >= x && px < x + 1 && pz >= z && pz < z + 1)
+      .map(([px, pz]): Ornament => ({ kind: "cylinder", centre: [px - x, pz - z], radius, bottom: 0, top: 1, colour: MULLION }));
+  }
+
   const cell = (material: MaterialName, colour: number, trim: Trim[], ornaments?: Ornament[]): BlueprintCell => ({
     material,
     colour,
     trim: trim.length > 0 ? trim : undefined,
     ornaments: ornaments && ornaments.length > 0 ? ornaments : undefined,
   });
+  const lobby = floorHeight + 1;
+  const cap = ny - 2;
 
   return (x, y, z) => {
     if (y === 0) {
-      const trim = cut(x, z, { outer: plinth });
+      const trim = band(x, z, 0.8);
       return trim && cell("stone", STONE, trim);
     }
-    if (y === dome) {
-      const trim = cut(x, z, { outer: facade + 0.15, outerTop: facade * 0.6 });
+    if (y === cap) {
+      const trim = band(x, z, 0.45, undefined, { top: 0.7 });
       return trim && cell("stone", ROOF_BLUE, trim);
     }
-    if (y === dome + 1) {
-      const trim = cut(x, z, { outer: facade * 0.6, outerTop: 0.4 });
-      const vent: Ornament[] =
-        x === Math.floor(centre[0]) && z === Math.floor(centre[1])
-          ? [{ kind: "box", min: [0.2, 0.9, 0.2], max: [0.8, 1.4, 0.8], colour: CORE }, { kind: "box", min: [0.1, 1.4, 0.1], max: [0.9, 1.5, 0.9], colour: ROOF_BLUE }]
-          : [];
-      return trim && cell("stone", ROOF_BLUE, trim, vent);
+    if (y === cap + 1) {
+      const middle = x === Math.floor(centre[0]) && z === Math.floor(centre[1]);
+      if (!middle) return undefined;
+      return {
+        material: "concrete",
+        colour: MULLION,
+        trim: [{ centre, outer: 0.45, top: 0.5 }],
+        ornaments: [{ kind: "box", min: [0.1, 0.5, 0.1], max: [0.9, 0.62, 0.9], colour: CORE }],
+      };
     }
-    if (y > dome) return undefined;
-    const coreTrim = cut(x, z, { outer: core });
-    if (coreTrim) return cell("concrete", CORE, coreTrim);
-    if (y % floorHeight === 0 || y === dome - 1) {
-      const trim = cut(x, z, { outer: facade + 0.1 });
+    if (y > cap) return undefined;
+    const core = disc(x, z, 1.6);
+    if (core) return cell("concrete", CORE, core);
+    // A floor plate, its edge a cream band standing proud of the glass.
+    if (y === lobby || (y > lobby && (y - lobby) % floorHeight === 0) || y === cap - 1) {
+      const trim = band(x, z, 0.2);
       if (!trim) return undefined;
-      const rim = reach(x, z, centre).far > facade - 0.5;
-      return cell("concrete", rim ? MULLION : CORE, trim);
+      const edge = band(x, z, 0.2, -0.6) !== undefined;
+      return cell("concrete", edge ? MULLION : CORE, trim);
     }
-    const trim = cut(x, z, { outer: facade, inner: facade - glass });
-    return trim && cell("glass", GLASS, trim, mullionsIn(x, z));
+    // The lobby: glass set back behind a colonnade of thick cream columns.
+    if (y < lobby) {
+      const trim = band(x, z, -0.5, -0.5 - glass);
+      return trim && cell("glass", GLASS, trim, postsIn(columns, x, z, 0.22));
+    }
+    const trim = band(x, z, 0, -glass);
+    return trim && cell("glass", GLASS, trim, postsIn(mullions, x, z, 0.07));
   };
 }
 

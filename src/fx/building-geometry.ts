@@ -19,7 +19,12 @@ export type BuildingShape = {
   cut: Map<number, CellMesh>;
   /** Triangles of the Ornaments on Cells, drawn while their Cell is alive and never cut. */
   ornaments?: Map<number, OrnamentMesh>;
+  /** Cells drawn see-through, such as glass: 1 for those. Their Ornaments stay solid. */
+  clear?: Uint8Array;
 };
+
+/** A Building's triangles: solid ones first, then from `clearFrom` (a float offset) the see-through ones. */
+export type BuildingMesh = CellMesh & { colour: Float32Array; clearFrom: number };
 
 // Each face: its outward normal and four corners, counter-clockwise from outside.
 const FACES = [
@@ -70,10 +75,19 @@ function linear(c: number): number {
 }
 
 /** Merges every live Cell into one non-indexed triangle list, with each vertex painted its Cell's colour. */
-export function buildingMesh({ size: [nx, ny, nz], alive, colour, cut, ornaments }: BuildingShape): CellMesh & { colour: Float32Array } {
+export function buildingMesh({ size: [nx, ny, nz], alive, colour, cut, ornaments, clear }: BuildingShape): BuildingMesh {
   const index = (x: number, y: number, z: number) => x + nx * (z + nz * y);
-  const intact = (x: number, y: number, z: number) =>
-    x >= 0 && x < nx && y >= 0 && y < ny && z >= 0 && z < nz && alive[index(x, y, z)] === 1 && !cut.has(index(x, y, z));
+  /** Whether a whole Cell at (x, y, z) hides the face against it: a see-through one hides only see-through faces. */
+  const hides = (x: number, y: number, z: number, seeThrough: boolean) =>
+    x >= 0 &&
+    x < nx &&
+    y >= 0 &&
+    y < ny &&
+    z >= 0 &&
+    z < nz &&
+    alive[index(x, y, z)] === 1 &&
+    !cut.has(index(x, y, z)) &&
+    (seeThrough || clear?.[index(x, y, z)] !== 1);
 
   let floats = 0;
   for (let i = 0; i < alive.length; i++) {
@@ -95,33 +109,41 @@ export function buildingMesh({ size: [nx, ny, nz], alive, colour, cut, ornaments
   };
 
   let o = 0;
-  for (let y = 0; y < ny; y++) {
-    for (let z = 0; z < nz; z++) {
-      for (let x = 0; x < nx; x++) {
-        const i = index(x, y, z);
-        if (!alive[i]) continue;
-        const start = o;
-        const own = cut.get(i);
-        if (own) {
-          position.set(own.position, o);
-          normal.set(own.normal, o);
-          o += own.position.length;
-        } else {
-          for (const face of FACES) {
-            if (intact(x + face.n[0], y + face.n[1], z + face.n[2])) continue;
-            o = writeFace(position, normal, o, face, x, y, z);
+  let clearFrom = 0;
+  // Solid Cells and every Ornament first, then the see-through Cells.
+  for (const seeThrough of [false, true]) {
+    if (seeThrough) clearFrom = o;
+    for (let y = 0; y < ny; y++) {
+      for (let z = 0; z < nz; z++) {
+        for (let x = 0; x < nx; x++) {
+          const i = index(x, y, z);
+          if (!alive[i]) continue;
+          if (!seeThrough) {
+            const extra = ornaments?.get(i);
+            if (extra) {
+              position.set(extra.position, o);
+              normal.set(extra.normal, o);
+              for (let v = 0; v < extra.colour.length; v++) paint(o + v * 3, o + v * 3 + 3, extra.colour[v]!);
+              o += extra.position.length;
+            }
           }
-        }
-        paint(start, o, colour[i]!);
-        const extra = ornaments?.get(i);
-        if (extra) {
-          position.set(extra.position, o);
-          normal.set(extra.normal, o);
-          for (let v = 0; v < extra.colour.length; v++) paint(o + v * 3, o + v * 3 + 3, extra.colour[v]!);
-          o += extra.position.length;
+          if ((clear?.[i] === 1) !== seeThrough) continue;
+          const start = o;
+          const own = cut.get(i);
+          if (own) {
+            position.set(own.position, o);
+            normal.set(own.normal, o);
+            o += own.position.length;
+          } else {
+            for (const face of FACES) {
+              if (hides(x + face.n[0], y + face.n[1], z + face.n[2], seeThrough)) continue;
+              o = writeFace(position, normal, o, face, x, y, z);
+            }
+          }
+          paint(start, o, colour[i]!);
         }
       }
     }
   }
-  return { position: position.slice(0, o), normal: normal.slice(0, o), colour: rgb.slice(0, o) };
+  return { position: position.slice(0, o), normal: normal.slice(0, o), colour: rgb.slice(0, o), clearFrom };
 }
