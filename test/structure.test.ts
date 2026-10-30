@@ -282,3 +282,44 @@ describe("Materials", () => {
     expect(s.alive[1]).toBe(1);
   });
 });
+
+describe("Reach (ADR 0005)", () => {
+  const brick = MATERIAL_NAMES.indexOf("brick");
+  /** A brick beam a layer up, `length` long, standing on ground Cells at the given x. */
+  function beam(length: number, legs: number[]) {
+    const count = length * 2;
+    const alive = new Uint8Array(count);
+    for (let x = 0; x < length; x++) alive[x + length] = 1;
+    for (const x of legs) alive[x] = 1;
+    return createStructure({
+      size: [length, 2, 1],
+      cells: {
+        alive,
+        mass: new Float32Array(count).fill(1),
+        integrity: new Float32Array(count).fill(100),
+        material: new Uint8Array(count).fill(brick),
+        colour: new Uint32Array(count),
+      },
+    });
+  }
+  const detached = (s: ReturnType<typeof beam>) =>
+    s
+      .evaluate()
+      .filter((e) => e.kind === "detach")
+      .flatMap((e) => (e.kind === "detach" ? e.cells : []))
+      .map((i) => s.coords(i)[0])
+      .sort((a, b) => a - b);
+
+  test("a cantilever past its Material's Reach Detaches beyond it", () => {
+    expect(MATERIALS.brick.reach).toBe(7);
+    expect(detached(beam(12, [0]))).toEqual([8, 9, 10, 11]);
+  });
+
+  test("a span held at both ends stands, and cut on one side drops what is beyond Reach", () => {
+    const s = beam(16, [0, 15]);
+    expect(s.evaluate()).toEqual([]);
+    s.applyBlast([3.5, 1.5, 0.5], 0.1, 1e6);
+    // x 0 to 2 still stand on the left leg; x 4 to 7 are more than 7 from the right one.
+    expect(detached(s)).toEqual([4, 5, 6, 7]);
+  });
+});

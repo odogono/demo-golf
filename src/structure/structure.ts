@@ -145,6 +145,7 @@ export function createStructure(options: StructureOptions) {
     }
   }
 
+  const reachOf = (i: number) => MATERIALS[MATERIAL_NAMES[material[i]!]!].reach;
   const capacity = (i: number) => (baseCapacity[i]! * integrity[i]!) / maxIntegrity[i]!;
 
   /** Groups of Cells on a layer joined side by side, as grid columns. */
@@ -174,6 +175,62 @@ export function createStructure(options: StructureOptions) {
       groups.push(group);
     }
     return groups;
+  }
+
+  /** Steps to the four side neighbours within a layer. */
+  const SIDES = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ] as const;
+
+  /**
+   * Which Cells are held up (ADR 0005): 1 for those resting on Support, or
+   * within their Material's Reach of it through their own layer; 2 for stubs
+   * hanging from a held Cell above; 0 for the rest, which must Detach. The
+   * ground layer is held.
+   */
+  function heldUp(): Uint8Array {
+    const layerSize = nx * nz;
+    const held = new Uint8Array(count);
+    const distance = new Float32Array(layerSize);
+    for (let y = 0; y < ny; y++) {
+      // Spread out from Support through the layer, as far as each Cell's Reach.
+      const queue: number[] = [];
+      distance.fill(Infinity);
+      for (let col = 0; col < layerSize; col++) {
+        const i = col + layerSize * y;
+        if (alive[i] && (y === 0 || held[i - layerSize] === 1)) {
+          held[i] = 1;
+          distance[col] = 0;
+          queue.push(col);
+        }
+      }
+      for (let q = 0; q < queue.length; q++) {
+        const col = queue[q]!;
+        const x = col % nx;
+        const z = Math.floor(col / nx);
+        for (const [dx, dz] of SIDES) {
+          if (!isAlive(x + dx, y, z + dz)) continue;
+          const next = x + dx + nx * (z + dz);
+          const i = next + layerSize * y;
+          const d = distance[col]! + 1;
+          if (d >= distance[next]! || d > reachOf(i)) continue;
+          distance[next] = d;
+          held[i] = 1;
+          queue.push(next);
+        }
+      }
+    }
+    // Stubs hang from a held Cell above them.
+    for (let y = ny - 2; y >= 0; y--) {
+      for (let col = 0; col < layerSize; col++) {
+        const i = col + layerSize * y;
+        if (alive[i] && !held[i] && held[i + layerSize]) held[i] = 2;
+      }
+    }
+    return held;
   }
 
   /**
@@ -257,32 +314,10 @@ export function createStructure(options: StructureOptions) {
     [0, 0, -1],
   ] as const;
 
-  /** Marks every Cell joined to a ground Cell through face neighbours. */
-  function groundConnected(): Uint8Array {
-    const seen = new Uint8Array(count);
-    const stack: number[] = [];
-    for (let col = 0; col < nx * nz; col++) {
-      if (alive[col]) {
-        seen[col] = 1;
-        stack.push(col);
-      }
-    }
-    while (stack.length > 0) {
-      const [x, y, z] = coords(stack.pop()!);
-      for (const [dx, dy, dz] of NEIGHBOURS) {
-        if (!isAlive(x + dx, y + dy, z + dz)) continue;
-        const j = index(x + dx, y + dy, z + dz);
-        if (seen[j]) continue;
-        seen[j] = 1;
-        stack.push(j);
-      }
-    }
-    return seen;
-  }
-
-  /** Removes every Cell cut off from the ground, one group per island. */
+  /** Removes every Cell no longer held up (ADR 0005), one group per island. */
   function detachIslands(): number[][] {
-    const seen = groundConnected();
+    // Anything not held up, by the ground or within Reach of Support, Detaches.
+    const seen = heldUp().map((h) => (h ? 1 : 0));
     const islands: number[][] = [];
     for (let start = 0; start < count; start++) {
       if (!alive[start] || seen[start]) continue;
@@ -490,7 +525,7 @@ export function createStructure(options: StructureOptions) {
 
     /** Metres from the ground to the top of the highest Cell still connected to it. */
     height(): number {
-      const seen = groundConnected();
+      const seen = heldUp();
       for (let i = count - 1; i >= 0; i--) if (seen[i]) return coords(i)[1] + 1;
       return 0;
     },
