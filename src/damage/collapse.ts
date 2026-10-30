@@ -194,7 +194,7 @@ export function createCollapse(
    * given each Cell's world centre. Centres must lie on one 1 m lattice. A
    * grid that ends up within half a metre of the ground is set on it.
    */
-  function rubble(source: Building, cells: number[], centres: Vec3[]) {
+  function rubble(source: Building, cells: number[], centres: Vec3[], turn: Turn = UPRIGHT) {
     if (cells.length === 0) return;
     const min: Vec3 = [Infinity, Infinity, Infinity];
     for (const c of centres) for (let k = 0; k < 3; k++) min[k] = Math.min(min[k]!, c[k]! - 0.5);
@@ -211,14 +211,6 @@ export function createCollapse(
       trims: new Map<number, Trim[]>(),
       ornaments: new Map<number, Ornament[]>(),
     };
-    // A piece that only moved, without turning, keeps its Cells' true shapes
-    // and Ornaments, each moved with its Cell into the new grid. Its floors may
-    // have dropped different heights. A turned one is drawn as bare whole cubes.
-    const shift = vec3.subtract(vec3.create(), centres[0]!, source.structure.cellCenter(vec3.create(), cells[0]!));
-    const moved = cells.every((cell, n) => {
-      const d = vec3.subtract(vec3.create(), centres[n]!, source.structure.cellCenter(vec3.create(), cell));
-      return Math.abs(d[0]! - shift[0]!) < 1e-3 && Math.abs(d[2]! - shift[2]!) < 1e-3;
-    });
     const { structure } = source;
     cells.forEach((cell, n) => {
       const [x, y, z] = at[n]!;
@@ -229,21 +221,14 @@ export function createCollapse(
       grid.integrity[i] = structure.maxIntegrity[cell]!;
       grid.material[i] = structure.material[cell]!;
       grid.colour[i] = structure.colour[cell]!;
-      if (!moved) return;
+      // Each Cell keeps its true shape and Ornaments, turned and moved with it
+      // into the new grid. Its floors may have dropped different heights.
       const was = structure.coords(cell);
-      const d = [x - was[0], y - was[1], z - was[2]];
+      const move = { turn, from: [was[0] + 0.5, was[1] + 0.5, was[2] + 0.5] as Vec3, to: [x + 0.5, y + 0.5, z + 0.5] as Vec3 };
       const trim = structure.trims.get(cell);
-      if (trim) {
-        grid.trims.set(
-          i,
-          trim.map((t) => {
-            const [u, , v] = AXIS_FRAME[t.axis ?? "y"];
-            return { ...t, centre: [t.centre[0] + d[u]!, t.centre[1] + d[v]!] };
-          }),
-        );
-      }
+      if (trim) grid.trims.set(i, trim.map((t) => turnTrim(t, move)));
       const ornaments = structure.ornaments.get(cell);
-      if (ornaments) grid.ornaments.set(i, ornaments);
+      if (ornaments) grid.ornaments.set(i, ornaments.map((o) => turnOrnament(o, turn)));
     });
     if (min[1] < 0.5) min[1] = 0;
     buildings.addRubble({ ...source.options, origin: min, size, cells: grid });
@@ -260,7 +245,7 @@ export function createCollapse(
       return vec3.add(vec3.create(), position, applyTurn(turn, local));
     });
     world.removeBody(fragment.id);
-    rubble(fragment.building, fragment.cells, centres);
+    rubble(fragment.building, fragment.cells, centres, turn);
   }
 
   /**
@@ -467,7 +452,72 @@ export function createCollapse(
 export type Collapse = ReturnType<typeof createCollapse>;
 
 /** A rotation that turns each axis onto another, possibly reversed: row k is where axis k goes. */
-type Turn = [Vec3, Vec3, Vec3];
+export type Turn = [Vec3, Vec3, Vec3];
+
+const UPRIGHT: Turn = [
+  [1, 0, 0],
+  [0, 1, 0],
+  [0, 0, 1],
+];
+const AXES = ["x", "y", "z"] as const;
+
+/** Where a Cell moves: turned by `turn` about its centre `from`, which lands on `to`. */
+type CellMove = { turn: Turn; from: Vec3; to: Vec3 };
+
+/**
+ * A trim carried along with its Cell. The turn is a quarter-turn rotation, so
+ * the trim's axis lands on another grid axis; if it now points the other way,
+ * its bottom and top swap ends, and the radii there with them.
+ */
+export function turnTrim(trim: Trim, { turn, from, to }: CellMove): Trim {
+  const axis = trim.axis ?? "y";
+  const [u, a, v] = AXIS_FRAME[axis];
+  // A point on the trim's line, in the old grid, and where it ends up.
+  const point: Vec3 = [0, 0, 0];
+  point[u] = trim.centre[0];
+  point[a] = from[a]!;
+  point[v] = trim.centre[1];
+  const moved = vec3.add(vec3.create(), applyTurn(turn, vec3.subtract(vec3.create(), point, from)), to);
+  const direction: Vec3 = [0, 0, 0];
+  direction[a] = 1;
+  const along = applyTurn(turn, direction);
+  const k = along.findIndex((c) => c !== 0);
+  const [nu, , nv] = AXIS_FRAME[AXES[k]!];
+  const out: Trim = { ...trim, axis: AXES[k]!, centre: [moved[nu]!, moved[nv]!] };
+  if (along[k]! < 0) {
+    const { outer, outerTop = outer, inner, innerTop = inner, bottom = 0, top = 1 } = trim;
+    Object.assign(out, { outer: outerTop, outerTop: outer, bottom: 1 - top, top: 1 - bottom });
+    if (inner !== undefined) Object.assign(out, { inner: innerTop, innerTop: inner });
+  }
+  if (out.axis === "y") delete out.axis;
+  return out;
+}
+
+/**
+ * An Ornament carried along with its Cell, about the Cell's centre. A box
+ * turns exactly. A cylinder can only stand upright, so one that ends up
+ * lying down becomes a box around it.
+ */
+function turnOrnament(ornament: Ornament, turn: Turn): Ornament {
+  const box =
+    ornament.kind === "box"
+      ? ornament
+      : {
+          kind: "box" as const,
+          min: [ornament.centre[0] - ornament.radius, ornament.bottom, ornament.centre[1] - ornament.radius] as Vec3,
+          max: [ornament.centre[0] + ornament.radius, ornament.top, ornament.centre[1] + ornament.radius] as Vec3,
+          colour: ornament.colour,
+        };
+  const corner = (p: Vec3) => vec3.add(vec3.create(), applyTurn(turn, vec3.subtract(vec3.create(), p, [0.5, 0.5, 0.5])), [0.5, 0.5, 0.5]);
+  const [p, q] = [corner(box.min), corner(box.max)];
+  const min: Vec3 = [Math.min(p[0], q[0]), Math.min(p[1], q[1]), Math.min(p[2], q[2])];
+  const max: Vec3 = [Math.max(p[0], q[0]), Math.max(p[1], q[1]), Math.max(p[2], q[2])];
+  if (ornament.kind === "cylinder" && turn[1][1] !== 0) {
+    // Still upright, perhaps upside down.
+    return { ...ornament, centre: [(min[0] + max[0]) / 2, (min[2] + max[2]) / 2], bottom: min[1], top: max[1] };
+  }
+  return { kind: "box", min, max, colour: box.colour };
+}
 
 /** The axis-aligned rotation nearest `rotation`. */
 export function nearestUpright(rotation: Quat): Turn {
@@ -495,6 +545,6 @@ export function nearestUpright(rotation: Quat): Turn {
   return result as Turn;
 }
 
-function applyTurn([x, y, z]: Turn, v: Vec3): Vec3 {
+export function applyTurn([x, y, z]: Turn, v: Vec3): Vec3 {
   return [x[0] * v[0] + y[0] * v[1] + z[0] * v[2], x[1] * v[0] + y[1] * v[1] + z[1] * v[2], x[2] * v[0] + y[2] * v[1] + z[2] * v[2]];
 }
