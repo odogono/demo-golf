@@ -138,7 +138,7 @@ export type BlueprintCell = {
 /** Says, for each Cell of a grid of `size`, whether it is empty or what it is made of. */
 export type Blueprint = (x: number, y: number, z: number) => BlueprintCell | undefined;
 
-export type BlueprintName = "frame" | "lighthouse" | "car-park";
+export type BlueprintName = "frame" | "lighthouse" | "car-park" | "glass-office";
 
 export type FrameOptions = {
   size: readonly [number, number, number];
@@ -364,8 +364,88 @@ export function carParkBlueprint({ size: [nx, ny, nz], floorHeight }: FrameOptio
   };
 }
 
+const ROOF_BLUE = 0x5b7db1;
+const MULLION = 0xf2e3c6;
+const CORE = 0xb9b4aa;
+
+/**
+ * A slender round office tower on a stone plinth. A concrete core rises the
+ * full height; a floor plate every `floorHeight` metres reaches out from it
+ * to a curved glass curtain wall, ringed with fine cream mullions (Ornaments).
+ * A blue dome with a rooftop vent caps it. The glass hangs off the plates and
+ * the core carries the load, so a hit sheds glass and leaves the core standing.
+ * It needs `size` about 9 × 21 × 9.
+ */
+export function glassOfficeBlueprint({ size: [nx, ny, nz], floorHeight }: FrameOptions): Blueprint {
+  const centre: [number, number] = [nx / 2, nz / 2];
+  const plinth = Math.min(nx, nz) / 2;
+  const facade = plinth - 1;
+  const glass = 0.35;
+  const core = 1.6;
+  const dome = ny - 2;
+  const mullions = 20;
+
+  /** Fine upright mullions where they cross Cell (x, z), on the face of the glass. */
+  function mullionsIn(x: number, z: number): Ornament[] {
+    const out: Ornament[] = [];
+    for (let k = 0; k < mullions; k++) {
+      const a = (k / mullions) * Math.PI * 2;
+      const px = centre[0] + (facade + 0.02) * Math.cos(a) - x;
+      const pz = centre[1] + (facade + 0.02) * Math.sin(a) - z;
+      if (px >= 0 && px < 1 && pz >= 0 && pz < 1) out.push({ kind: "cylinder", centre: [px, pz], radius: 0.05, bottom: 0, top: 1, colour: MULLION });
+    }
+    return out;
+  }
+
+  /** Cell (x, z) cut to the disc or ring `piece` about the tower's axis, if it reaches it. */
+  function cut(x: number, z: number, piece: Piece): Trim[] | undefined {
+    const { near, far } = reach(x, z, centre);
+    const outer = Math.max(piece.outer, piece.outerTop ?? piece.outer);
+    if (near >= outer - SLIVER || far <= (piece.inner ?? 0) + SLIVER) return undefined;
+    const whole = far <= Math.min(piece.outer, piece.outerTop ?? piece.outer) && near >= (piece.inner ?? 0) && piece.top === undefined;
+    return whole ? [] : [{ centre, ...piece }];
+  }
+  const cell = (material: MaterialName, colour: number, trim: Trim[], ornaments?: Ornament[]): BlueprintCell => ({
+    material,
+    colour,
+    trim: trim.length > 0 ? trim : undefined,
+    ornaments: ornaments && ornaments.length > 0 ? ornaments : undefined,
+  });
+
+  return (x, y, z) => {
+    if (y === 0) {
+      const trim = cut(x, z, { outer: plinth });
+      return trim && cell("stone", STONE, trim);
+    }
+    if (y === dome) {
+      const trim = cut(x, z, { outer: facade + 0.15, outerTop: facade * 0.6 });
+      return trim && cell("stone", ROOF_BLUE, trim);
+    }
+    if (y === dome + 1) {
+      const trim = cut(x, z, { outer: facade * 0.6, outerTop: 0.4 });
+      const vent: Ornament[] =
+        x === Math.floor(centre[0]) && z === Math.floor(centre[1])
+          ? [{ kind: "box", min: [0.2, 0.9, 0.2], max: [0.8, 1.4, 0.8], colour: CORE }, { kind: "box", min: [0.1, 1.4, 0.1], max: [0.9, 1.5, 0.9], colour: ROOF_BLUE }]
+          : [];
+      return trim && cell("stone", ROOF_BLUE, trim, vent);
+    }
+    if (y > dome) return undefined;
+    const coreTrim = cut(x, z, { outer: core });
+    if (coreTrim) return cell("concrete", CORE, coreTrim);
+    if (y % floorHeight === 0 || y === dome - 1) {
+      const trim = cut(x, z, { outer: facade + 0.1 });
+      if (!trim) return undefined;
+      const rim = reach(x, z, centre).far > facade - 0.5;
+      return cell("concrete", rim ? MULLION : CORE, trim);
+    }
+    const trim = cut(x, z, { outer: facade, inner: facade - glass });
+    return trim && cell("glass", GLASS, trim, mullionsIn(x, z));
+  };
+}
+
 export const BLUEPRINTS: Record<BlueprintName, (options: FrameOptions) => Blueprint> = {
   frame: frameBlueprint,
   lighthouse: lighthouseBlueprint,
   "car-park": carParkBlueprint,
+  "glass-office": glassOfficeBlueprint,
 };

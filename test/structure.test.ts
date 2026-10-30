@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { MATERIAL_NAMES } from "../src/structure/blueprint";
 import { createStructure } from "../src/structure/structure";
 
 const target = () => createStructure({ size: [8, 20, 8] });
@@ -197,5 +198,31 @@ describe("the car park Blueprint", () => {
     expect(events.some((e) => e.kind === "crush")).toBe(true);
     // The free-standing stair tower is left at full height.
     expect(s.height()).toBe(15);
+  });
+});
+
+describe("the glass office Blueprint", () => {
+  const office = () => createStructure({ size: [9, 21, 9], floorHeight: 3, blueprint: "glass-office" });
+
+  test("stands undamaged, glass around a concrete core", () => {
+    const s = office();
+    expect(s.evaluate()).toEqual([]);
+    expect(s.height()).toBe(21);
+    expect(MATERIAL_NAMES[s.material[s.index(4, 4, 4)]!]).toBe("concrete");
+    expect(MATERIAL_NAMES[s.material[s.index(1, 4, 4)]!]).toBe("glass");
+  });
+
+  test("sheds the glass across one face of a storey and the core still carries the floors above", () => {
+    const s = office();
+    for (let y = 4; y <= 5; y++) {
+      for (let x = 0; x < 9; x++) {
+        for (let z = 5; z < 9; z++) {
+          const i = s.index(x, y, z);
+          if (s.alive[i] && MATERIAL_NAMES[s.material[i]!] === "glass") s.applyBlast([x + 0.5, y + 0.5, z + 0.5], 0.1, 1e6);
+        }
+      }
+    }
+    expect(s.evaluate()).toEqual([]);
+    expect(s.height()).toBe(21);
   });
 });
