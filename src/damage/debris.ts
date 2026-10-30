@@ -107,6 +107,11 @@ export function createDebris(world: PhysicsWorld, options: DebrisOptions) {
       }
     },
 
+    /** Freezes every live piece into Rubble where it is, as when a Shot times out. */
+    freeze() {
+      while (freezeOldest());
+    },
+
     clear() {
       for (const piece of live) world.removeBody(piece.id);
       live.length = 0;
