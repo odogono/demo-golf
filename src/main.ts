@@ -125,8 +125,10 @@ let flightTime = 0;
 let previewPower = 0.6;
 const roundSettings = { ...DEFAULT_ROUND };
 /** The Target is the Hole's first Building. */
-const targetHeight = () => buildings.list[0]!.structure.height();
-let round = createRound(roundSettings, targetHeight());
+const target = () => buildings.list[0]!.structure;
+let round = createRound(roundSettings, target().cells());
+/** The share of the Target Destroyed this Hole, as a whole percentage. */
+const destroyedPercent = () => Math.round(round.destroyed(target().cells()) * 100);
 const result = createResultView(document.body, replay);
 /** Where the next Shot starts, on the ground: the Tee, then wherever the last ball came to rest (ADR 0003). */
 const lie: Vec3 = vec3.clone(TEE);
@@ -276,9 +278,9 @@ const loop = createFixedLoop((dt) => {
   // A ball that exploded, left the Hole or was still rolling at the timeout
   // leaves the Lie where it was: the next Shot goes from the same spot.
   resetBall();
-  round.finish(targetHeight());
+  round.finish(target().cells());
   if (round.state === "won" && !auto.enabled && !SCENARIO) {
-    result.show(scoreName(round.strokes, roundSettings.par), `Target down in ${round.strokes} · Par ${roundSettings.par}`);
+    result.show(scoreName(round.strokes, roundSettings.par), `Destroyed ${destroyedPercent()}% in ${round.strokes} · Par ${roundSettings.par}`);
   }
 });
 
@@ -304,7 +306,7 @@ function rebuild() {
   collapse.clear();
   buildings.reset({ integrity: tuning.cellStrength, tipMargin: tuning.tipMargin });
   showBuildings();
-  round = createRound(roundSettings, targetHeight());
+  round = createRound(roundSettings, target().cells());
 }
 
 /** Plays the Hole again from the first Shot. */
@@ -328,7 +330,7 @@ collapseGui.add(collapse.settings, "crushImpactKeep", 0, 1, 0.05).name("Crush sp
 gui.add({ rebuild }, "rebuild").name("Rebuild buildings");
 const roundGui = gui.addFolder("Hole");
 roundGui.add(roundSettings, "par", 1, 10, 1).name("Par");
-roundGui.add(roundSettings, "winBelow", 0.05, 0.9, 0.05).name("Win below (× start Height)");
+roundGui.add(roundSettings, "winDestroyed", 0.1, 1, 0.05).name("Win at Destroyed share");
 roundGui.add(roundSettings, "settleTimeout", 1, 20, 0.5).name("Settle timeout (s)");
 const autoGui = gui.addFolder("Auto mode (P)");
 autoGui.add(auto, "enabled").name("Fire automatically");
@@ -400,7 +402,7 @@ rig.renderer.setAnimationLoop((now) => {
   const mean = frameTimes.reduce((a, b) => a + b, 0) / Math.max(1, frameTimes.length);
   const worst = Math.max(0, ...frameTimes);
   view.setLabel(
-    `Stroke ${round.strokes} · Par ${roundSettings.par} · Target ${targetHeight()} m, down below ${round.winHeight.toFixed(1)} m\n` +
+    `Stroke ${round.strokes} · Par ${roundSettings.par} · Destroyed ${destroyedPercent()}% of ${Math.round(roundSettings.winDestroyed * 100)}%\n` +
       `${ballType.name} ball · A/D or drag: aim · W/S: loft · hold Space: power · 1/2: ball · G: grid · V: view · O: orbit · P: auto${auto.enabled ? " (on)" : ""}\n` +
       `${cameraView.orbiting ? "Orbit" : director.mode}${director.mode === "AimCam" ? ` (${director.view})` : ""} · ` +
       `${fps.toFixed(0)} fps · physics + Structure ${mean.toFixed(2)} ms/frame (max ${worst.toFixed(2)}) · ` +
@@ -445,7 +447,7 @@ function blastDirectly(center: Vec3, radius: number, power: number, building = 0
       return;
     }
     // A Scenario plays every step, even after the Hole is won.
-    if (round.state === "won") round = createRound(roundSettings, targetHeight());
+    if (round.state === "won") round = createRound(roundSettings, target().cells());
     vec3.copy(lie, step.shot.from);
     ballType = BALL_TYPES[step.shot.ball];
     resetBall();
@@ -465,5 +467,5 @@ function blastDirectly(center: Vec3, radius: number, power: number, building = 0
   },
   rebuild,
   /** The Hole so far: whether it is won, and in how many Strokes. */
-  round: () => ({ state: round.state, strokes: round.strokes, height: targetHeight() }),
+  round: () => ({ state: round.state, strokes: round.strokes, destroyed: round.destroyed(target().cells()) }),
 };

@@ -1,22 +1,22 @@
 /** Tunable rules of a Hole. */
 export type RoundSettings = {
   par: number;
-  /** The Hole is won once the Target's Height is below this fraction of its starting Height. */
-  winBelow: number;
+  /** The Hole is won once this share of the Target's starting Cells is Destroyed (ADR 0004). */
+  winDestroyed: number;
   /** Seconds a Shot may run before the scene counts as Settled anyway. */
   settleTimeout: number;
 };
 
-export const DEFAULT_ROUND: RoundSettings = { par: 5, winBelow: 0.3, settleTimeout: 10 };
+export const DEFAULT_ROUND: RoundSettings = { par: 5, winDestroyed: 0.7, settleTimeout: 10 };
 
 export type RoundState = "aiming" | "shot" | "won";
 
 /**
  * One play of a Hole: counts Strokes and decides, each time the scene
- * Settles, whether the Target is down. `startHeight` is the Target's Height
- * before the first Shot.
+ * Settles, whether the Target is down. `startCells` is how many Cells the
+ * Target's Structure held before the first Shot.
  */
-export function createRound(settings: RoundSettings, startHeight: number) {
+export function createRound(settings: RoundSettings, startCells: number) {
   let state: RoundState = "aiming";
   let strokes = 0;
   let time = 0;
@@ -29,9 +29,9 @@ export function createRound(settings: RoundSettings, startHeight: number) {
     get strokes() {
       return strokes;
     },
-    /** The Height the Target must fall below to win. */
-    get winHeight() {
-      return startHeight * settings.winBelow;
+    /** The share of the Target Destroyed, 0 to 1, when `cells` remain in its Structure. */
+    destroyed(cells: number): number {
+      return startCells === 0 ? 0 : 1 - cells / startCells;
     },
 
     /** Takes a Shot if one is allowed now. Returns whether it was. */
@@ -55,10 +55,14 @@ export function createRound(settings: RoundSettings, startHeight: number) {
       return { over: settled || timedOut, timedOut };
     },
 
-    /** Ends the Shot with the Target at `height`: the Hole is won, or the next Shot may be aimed. */
-    finish(height: number) {
+    /**
+     * Ends the Shot with `cells` left in the Target's Structure: the Hole is
+     * won, or the next Shot may be aimed. Cells that left it as Rubble count
+     * as Destroyed, even if they landed upright.
+     */
+    finish(cells: number) {
       if (state !== "shot") return;
-      state = height < this.winHeight ? "won" : "aiming";
+      state = this.destroyed(cells) >= settings.winDestroyed ? "won" : "aiming";
     },
   };
 }

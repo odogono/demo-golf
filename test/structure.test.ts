@@ -42,6 +42,18 @@ describe("connectivity", () => {
     expect(event!.kind).toBe("detach");
     expect(s.height()).toBe(10);
   });
+
+  test("Detached Cells leave the Structure, so they count as Destroyed wherever they land", () => {
+    const s = target();
+    const before = s.cells();
+    for (let x = 0; x < 8; x++) {
+      for (let z = 0; z < 8; z++) s.applyBlast([x + 0.5, 10.5, z + 0.5], 0.1, 1000);
+    }
+    const blasted = before - s.cells();
+    const [event] = s.evaluate();
+    expect(event!.kind).toBe("detach");
+    expect(s.cells()).toBe(before - blasted - (event as { cells: number[] }).cells.length);
+  });
 });
 
 describe("load cascade", () => {

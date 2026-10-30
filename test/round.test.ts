@@ -24,15 +24,29 @@ test("a Shot ends at the settle timeout even if bodies still move", () => {
   expect(round.update(0.2, false)).toEqual({ over: true, timedOut: true });
 });
 
-test("the Hole is won when the Target falls below 30% of its starting Height", () => {
-  const round = createRound(settings, 24);
+test("the Hole is won once 70% of the Target's Cells are Destroyed", () => {
+  const round = createRound(settings, 100);
   round.shoot();
-  round.finish(8);
+  round.finish(31);
   expect(round.state).toBe("aiming");
   round.shoot();
-  round.finish(7);
+  round.finish(30);
   expect(round.state).toBe("won");
   expect(round.shoot()).toBe(false);
+});
+
+test("the threshold is a setting", () => {
+  const round = createRound({ ...settings, winDestroyed: 0.25 }, 100);
+  round.shoot();
+  round.finish(75);
+  expect(round.state).toBe("won");
+});
+
+test("Destroyed is the share of starting Cells gone from the Structure", () => {
+  const round = createRound(settings, 200);
+  expect(round.destroyed(200)).toBe(0);
+  expect(round.destroyed(50)).toBe(0.75);
+  expect(createRound(settings, 0).destroyed(0)).toBe(0);
 });
 
 test("the score is named against Par", () => {
