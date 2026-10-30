@@ -177,3 +177,25 @@ describe("the lighthouse Blueprint", () => {
     expect(toughness.size).toBe(3);
   });
 });
+
+describe("the car park Blueprint", () => {
+  const carPark = () => createStructure({ size: [9, 15, 9], floorHeight: 3, blueprint: "car-park" });
+
+  test("stands undamaged, its tower a storey above the roof", () => {
+    const s = carPark();
+    expect(s.evaluate()).toEqual([]);
+    expect(s.height()).toBe(15);
+    expect(s.ornaments.size).toBeGreaterThan(0);
+  });
+
+  test("survives losing one ground-floor column, and pancakes on losing two", () => {
+    const s = carPark();
+    s.applyBlast([4.5, 1.5, 7.5], 0.1, 1e6);
+    expect(s.evaluate()).toEqual([]);
+    s.applyBlast([7.5, 1.5, 7.5], 0.1, 1e6);
+    const events = s.evaluate();
+    expect(events.some((e) => e.kind === "crush")).toBe(true);
+    // The free-standing stair tower is left at full height.
+    expect(s.height()).toBe(15);
+  });
+});

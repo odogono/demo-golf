@@ -33,6 +33,15 @@ export const SCENARIOS: Scenario[] = [
       { shot: { from: [0, 0, 4], at: [0, 2, -7], ball: "explosive" } },
     ],
   },
+  {
+    name: "car-park",
+    building: { origin: [-4.5, 0, -14.5], size: [9, 15, 9], floorHeight: 3, blueprint: "car-park" },
+    steps: [
+      { blast: { center: [0.5, 4.5, -7], radius: 1.5, power: 60 } },
+      { shot: { from: [0, 0, 4], at: [2, 1.5, -6], ball: "explosive" } },
+      { shot: { from: [0, 0, 4], at: [-1, 7.5, -6], ball: "standard" } },
+    ],
+  },
 ];
 
 export function scenarioNamed(name: string): Scenario | undefined {

@@ -138,7 +138,7 @@ export type BlueprintCell = {
 /** Says, for each Cell of a grid of `size`, whether it is empty or what it is made of. */
 export type Blueprint = (x: number, y: number, z: number) => BlueprintCell | undefined;
 
-export type BlueprintName = "frame" | "lighthouse";
+export type BlueprintName = "frame" | "lighthouse" | "car-park";
 
 export type FrameOptions = {
   size: readonly [number, number, number];
@@ -260,7 +260,112 @@ export function lighthouseBlueprint({ size: [nx, ny, nz], floorHeight }: FrameOp
   };
 }
 
+const CORAL = 0xee8a62;
+const SLAB = 0xe2ddd2;
+const CREAM = 0xf1e4c8;
+const RAIL = 0x3556b8;
+const CARS = [0xc8402f, 0x3a5fb0, 0xe9e6df, 0x4f7a6a];
+
+/** The nearest and farthest the footprint of Cell (x, z) comes to the vertical axis through `centre`. */
+function reach(x: number, z: number, [cx, cz]: [number, number]): { near: number; far: number } {
+  return {
+    near: Math.hypot(Math.max(x - cx, 0, cx - x - 1), Math.max(z - cz, 0, cz - z - 1)),
+    far: Math.hypot(Math.max(Math.abs(x - cx), Math.abs(x + 1 - cx)), Math.max(Math.abs(z - cz), Math.abs(z + 1 - cz))),
+  };
+}
+
+/**
+ * A multi-storey car park on a round-cornered stone plinth. A deck every
+ * `floorHeight` metres, its edge Cells banded coral and railed in blue, rests
+ * on slender round columns. A hollow round stair tower with a blue dome fills
+ * one corner and rises a storey past the roof. Cars are parked on every deck.
+ * Railings and cars are Ornaments. It needs `size` about 9 × 15 × 9.
+ */
+export function carParkBlueprint({ size: [nx, ny, nz], floorHeight }: FrameOptions): Blueprint {
+  const corner = 2;
+  const radius = 1.5;
+  const tower: [number, number] = [radius, radius];
+  const towerWall = 0.5;
+  const roof = Math.floor((ny - 3) / floorHeight) * floorHeight;
+  const columns = [1, Math.floor(nx / 2), nx - 2];
+  const deck = (y: number) => y === 0 || (y % floorHeight === 0 && y <= roof);
+
+  /** The deck's outline, a rectangle with rounded corners: undefined outside it, else its trim (empty when whole). */
+  function outline(x: number, z: number): Trim[] | undefined {
+    const cx = x < corner ? corner : x >= nx - corner ? nx - corner : undefined;
+    const cz = z < corner ? corner : z >= nz - corner ? nz - corner : undefined;
+    if (cx === undefined || cz === undefined) return [];
+    const { near, far } = reach(x, z, [cx, cz]);
+    if (near > corner - SLIVER) return undefined;
+    return far <= corner ? [] : [{ centre: [cx, cz], outer: corner }];
+  }
+
+  /** A railing along each of the Cell's sides that faces out of the deck. */
+  function railings(x: number, z: number): Ornament[] {
+    const out: Ornament[] = [];
+    const rail = (min: [number, number, number], max: [number, number, number]) => out.push({ kind: "box", min, max, colour: RAIL });
+    if (x === 0) rail([0.02, 1.85, 0], [0.08, 1.92, 1]);
+    if (x === nx - 1) rail([0.92, 1.85, 0], [0.98, 1.92, 1]);
+    if (z === 0) rail([0, 1.85, 0.02], [1, 1.92, 0.08]);
+    if (z === nz - 1) rail([0, 1.85, 0.92], [1, 1.92, 0.98]);
+    if (out.length > 0) {
+      const px = x === 0 ? 0.05 : x === nx - 1 ? 0.95 : 0.5;
+      const pz = z === 0 ? 0.05 : z === nz - 1 ? 0.95 : 0.5;
+      out.push({ kind: "cylinder", centre: [px, pz], radius: 0.03, bottom: 1, top: 1.88, colour: RAIL });
+    }
+    return out;
+  }
+
+  /** A small car parked across Cell (x, z) and the next along x. */
+  const car = (colour: number): Ornament[] => [
+    { kind: "box", min: [0.15, 1.15, 0.2], max: [1.85, 1.6, 0.85], colour },
+    { kind: "box", min: [0.55, 1.6, 0.25], max: [1.45, 1.95, 0.8], colour },
+    ...[0.45, 1.55].flatMap((wx) =>
+      [0.22, 0.83].map((wz): Ornament => ({ kind: "box", min: [wx - 0.17, 1, wz - 0.05], max: [wx + 0.17, 1.3, wz + 0.05], colour: WINDOW })),
+    ),
+  ];
+  const bays: [number, number][] = [
+    [Math.floor(nx / 2) - 2, nz - 3],
+    [Math.floor(nx / 2) + 1, nz - 3],
+    [Math.floor(nx / 2) + 1, Math.floor(nz / 2) - 2],
+  ];
+
+  return (x, y, z) => {
+    const { near, far } = reach(x, z, tower);
+    // The stair tower: hollow, capped with a dome, and standing free of the
+    // decks so that they rest on their columns alone.
+    if (y > 0 && near < radius - SLIVER) {
+      if (y === roof + 1) return { material: "stone", colour: NAVY, trim: [{ centre: tower, outer: radius + 0.1, outerTop: radius * 0.6 }] };
+      if (y === roof + 2) {
+        return near < radius * 0.6 - SLIVER ? { material: "stone", colour: NAVY, trim: [{ centre: tower, outer: radius * 0.6, outerTop: 0.1 }] } : undefined;
+      }
+      if (y > roof + 2 || far <= radius - towerWall + SLIVER) return undefined;
+      return { material: "concrete", colour: CREAM, trim: [{ centre: tower, outer: radius, inner: radius - towerWall }] };
+    }
+    if (y > 0 && near < radius + 1 - SLIVER) return undefined;
+    if (deck(y)) {
+      const trim = outline(x, z);
+      if (!trim) return undefined;
+      const edge = x === 0 || z === 0 || x === nx - 1 || z === nz - 1 || trim.length > 0;
+      const bay = bays.findIndex(([bx, bz]) => bx === x && bz === z);
+      const ornaments = [...(y > 0 && trim.length === 0 ? railings(x, z) : []), ...(bay >= 0 && y < roof ? car(CARS[(bay + y) % CARS.length]!) : [])];
+      return {
+        material: y === 0 ? "stone" : "concrete",
+        colour: y === 0 ? STONE : edge ? CORAL : SLAB,
+        trim: trim.length > 0 ? trim : undefined,
+        ornaments: ornaments.length > 0 ? ornaments : undefined,
+      };
+    }
+    // Slender columns, weaker than the decks: lose two on a level and the decks above it pancake.
+    if (y < roof && columns.includes(x) && columns.includes(z)) {
+      return { material: "brick", colour: SLAB, trim: [{ centre: [x + 0.5, z + 0.5], outer: 0.3 }] };
+    }
+    return undefined;
+  };
+}
+
 export const BLUEPRINTS: Record<BlueprintName, (options: FrameOptions) => Blueprint> = {
   frame: frameBlueprint,
   lighthouse: lighthouseBlueprint,
+  "car-park": carParkBlueprint,
 };
