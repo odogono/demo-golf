@@ -14,7 +14,9 @@
 
 **Par** — The expected number of Strokes needed to win a Hole.
 
-**Target** — The building the player must bring down. Only its Height counts toward winning.
+**Target** — The building the player must bring down. The Hole is won once enough of it is Destroyed.
+
+**Destroyed** — The share of a Target's original Cells that are no longer part of its Structure, whether a Blast destroyed them or they left by Detach, Crush or Tip, even if they come to rest as Rubble. It counts Cells, not mass, and never Ornaments.
 
 **Neighbour** — A building that can be damaged by Fragments but does not count toward winning.
 
@@ -27,6 +29,8 @@
 **Blueprint** — The layout of a building's Cells and their Materials, from which its Structure is built. Different kinds of building differ only in their Blueprint, never in how they are destroyed.
 
 **Scenario** — A repeatable test of one Blueprint: a fixed series of Blasts or Shots, each measured once the Hole is Settled, used to compare how different Blueprints are destroyed.
+
+**Ornament** — A purely visual detail attached to one Cell, such as a lamp post, railing or window frame. It has no mass, never collides and never takes damage. It moves with its Cell and disappears when its Cell is destroyed.
 
 **Integrity** — How much Blast damage a Cell can take before it is destroyed.
 
@@ -54,6 +58,6 @@
 
 **Crater** — A dip that a ball's Blast leaves in the Terrain where its radius reaches the ground. It never reaches into a Foundation, and it lasts until the Hole ends.
 
-**Height** — The height, above the top of its Foundation, of the highest Cell in a Structure that is still connected to the ground.
+**Height** — The height, above the top of its Foundation, of the highest Cell in a Structure that is still connected to the ground. It describes how a building fell but never decides a win.
 
 **Settled** — The state in which every body is asleep, or the settle timeout has passed, so the next Shot is allowed.

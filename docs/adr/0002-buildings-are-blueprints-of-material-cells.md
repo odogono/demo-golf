@@ -18,3 +18,5 @@ A building is described by a Blueprint: a function that says, for every Cell in 
 - Capacity is still derived from load on a layer, so unusual shapes, such as thin round walls under a heavy cap, have to be tuned through their Materials rather than through special rules.
 - Meshes carry a colour for each Cell, which they take from the Blueprint.
 - A Blueprint can also give a Cell its true shape, as one or more round pieces such as part of a tapering wall or a cone roof. The mesh is trimmed to that shape and the collider is a convex hull for each piece, so curved buildings look and collide curved. The Structure still treats every Cell as a whole 1 m cube with its full mass, so collapse is unchanged.
+- A Cell's true shape can also curve around a horizontal axis, along x or z, as in the underside of an arch, so bridges and vaults look curved too. The Structure still treats the Cell as a whole cube.
+- A Blueprint can attach Ornaments to a Cell: details such as lamp posts and railings that are drawn but have no mass, never collide and never take damage. They move with their Cell and disappear when it is destroyed, so they never change how a building falls.
