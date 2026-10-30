@@ -27,6 +27,7 @@ import { TEE, createRestCheck, launchBall } from "./shot/shot";
 import { predictTrajectory } from "./shot/trajectory";
 import { DEFAULT_ROUND, createRound, scoreName } from "./game/round";
 import { BUILDINGS } from "./hole";
+import { scenarioNamed } from "./scenarios";
 import { createResultView } from "./render/result-view";
 import { startWorker, workerPort } from "./worker-port";
 
@@ -34,8 +35,12 @@ import { startWorker, workerPort } from "./worker-port";
 const AUTO_SHOT_TIMEOUT = 3;
 
 
+/** `?scenario=<name>` plays a Scenario's building instead of the Hole's, for `bun run scenarios --gif`. */
+const SCENARIO = scenarioNamed(new URLSearchParams(location.search).get("scenario") ?? "");
+const HOLE_BUILDINGS = SCENARIO ? [SCENARIO.building] : BUILDINGS;
+
 /** Each Building's whole extent: slow motion starts when the ball is about to enter one. */
-const BOXES: Box[] = BUILDINGS.map(({ origin = [0, 0, 0], size }) => ({
+const BOXES: Box[] = HOLE_BUILDINGS.map(({ origin = [0, 0, 0], size }) => ({
   min: vec3.clone(origin),
   max: vec3.add(vec3.create(), origin, size),
 }));
@@ -58,7 +63,7 @@ const world = createCrashcatWorld();
 world.addBody({ shape: { kind: "box", halfExtents: [100, 0.5, 100] }, motion: "static", position: [0, -0.5, 0] });
 
 const structurePort: StructurePort = workerPort(startWorker("structure"));
-const buildings = createBuildings(world, structurePort, BUILDINGS);
+const buildings = createBuildings(world, structurePort, HOLE_BUILDINGS);
 const debris = createDebris(world, {
   cap: 150,
   otherBodies: () => (damage.ball === undefined ? 0 : 1) + collapse.moving,
@@ -272,7 +277,7 @@ const loop = createFixedLoop((dt) => {
   // leaves the Lie where it was: the next Shot goes from the same spot.
   resetBall();
   round.finish(targetHeight());
-  if (round.state === "won" && !auto.enabled) {
+  if (round.state === "won" && !auto.enabled && !SCENARIO) {
     result.show(scoreName(round.strokes, roundSettings.par), `Target down in ${round.strokes} · Par ${roundSettings.par}`);
   }
 });
@@ -416,19 +421,40 @@ rig.renderer.setAnimationLoop((now) => {
 /** Set by `__golf.look`: holds the camera still instead of following the director. */
 let pinnedPose: Pose | undefined;
 
+function blastDirectly(center: Vec3, radius: number, power: number, building = 0, outward: Vec3 = [1, 0, 0]) {
+  const blast: Blast = { center, radius, power, outward };
+  buildings.blast(buildings.list[building]!, blast);
+  dust.puff(center, outward, 80, 2.5);
+}
+
 /**
  * A debug hook for scripted runs: `bun run shoot` (tools/shoot.ts) drives the
  * game through it rather than through the keyboard.
  */
 (window as unknown as { __golf: unknown }).__golf = {
   /** Blasts a Building directly, as if a ball had hit `center`. */
-  blast(center: Vec3, radius: number, power: number, building = 0, outward: Vec3 = [1, 0, 0]) {
-    const blast: Blast = { center, radius, power, outward };
-    buildings.blast(buildings.list[building]!, blast);
-    dust.puff(center, outward, 80, 2.5);
-  },
+  blast: blastDirectly,
   /** Fires the current ball at `power` (0–1) along the current aim. */
   shoot,
+  /** Plays step `index` of the `?scenario=` Scenario: its Blast, or its Shot from its own Lie. */
+  step(index: number) {
+    const step = SCENARIO?.steps[index];
+    if (!step) throw new Error(`no step ${index} in this Scenario`);
+    if ("blast" in step) {
+      blastDirectly(step.blast.center, step.blast.radius, step.blast.power, 0, [0, 0, 1]);
+      return;
+    }
+    // A Scenario plays every step, even after the Hole is won.
+    if (round.state === "won") round = createRound(roundSettings, targetHeight());
+    vec3.copy(lie, step.shot.from);
+    ballType = BALL_TYPES[step.shot.ball];
+    resetBall();
+    const { aim, power } = autoAim(current, step.shot.at, ballType);
+    input.aim = aim;
+    shoot(power);
+  },
+  /** True once no Shot is in play and every body is at rest. */
+  settled: () => !inFlight && world.isSettled() && !collapse.animating && !buildings.waiting,
   /** Pins the camera at `position` looking at `target`; call with no arguments to release it. */
   look(position?: Vec3, target?: Vec3, fov = 50) {
     pinnedPose = position && target ? { position, target, fov } : undefined;

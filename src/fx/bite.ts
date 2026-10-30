@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { Brush, Evaluator, SUBTRACTION } from "three-bvh-csg";
 import { buildingMesh, cellBox, type BuildingShape, type CellMesh } from "./building-geometry";
+import { seeded } from "../random";
 
 /**
  * Cuts Bites into Buildings' meshes. A Bite is a jagged blob subtracted
@@ -33,18 +34,6 @@ export type CsgReply = {
   /** Milliseconds spent cutting and merging. */
   ms: number;
 };
-
-/** Deterministic random numbers in [0, 1) from a seed (mulberry32). */
-export function seeded(seed: number) {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 /** A closed, randomly jagged blob around `center`, with flat-shaded facets. */
 export function jaggedBlob(center: readonly number[], radius: number, seed: number): THREE.BufferGeometry {

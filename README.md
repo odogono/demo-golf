@@ -9,6 +9,7 @@ bun run test     # bun test
 bun run typecheck
 bun run shoot    # headless screenshots and GIFs; --help for options
 bun run bench    # ten shots, timed, without rendering
+bun run scenarios  # compare how each Blueprint is destroyed; --help for options
 ```
 
 ## Where things live
@@ -27,6 +28,8 @@ bun run bench    # ten shots, timed, without rendering
 | `src/fx/` | Building meshes, Bites (CSG, in `csg.worker.ts`), Debris, Fragments and dust. |
 
 Three.js appears only in `render/` and `fx/`; everything else uses `math` (pmndrs) tuples. Workers are listed in `workers.ts` and bundled separately; see `NOTES.md`.
+
+Scenarios, repeatable tests of one Blueprint each, are defined in `src/scenarios.ts` and played headlessly by `bench/scenarios.ts`; `?scenario=<name>` loads one in the game for `bun run shoot --scenario`.
 
 Tests are in `test/`, one file per area. Tools: `tools/commits/` (commit and changelog checks), `tools/shoot.ts`.
 
