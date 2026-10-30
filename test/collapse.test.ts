@@ -94,7 +94,7 @@ describe("Tip", () => {
 describe("Crush", () => {
   test("crushing a middle floor drops the floors above into a stack, then leaves Rubble", () => {
     const env = setup();
-    blastTarget(env, [3, 10, -10], 5, 2000);
+    blastTarget(env, [0, 10, -10], 5, 2000);
     expect(env.collapse.fragments).toHaveLength(0);
     expect(env.collapse.pancakes).toHaveLength(1);
     const pancake = env.collapse.pancakes[0]!;
@@ -148,7 +148,7 @@ describe("Crush", () => {
 
   test("each floor's landing blows out its pillars, one floor after another from the bottom", () => {
     const env = setup();
-    blastTarget(env, [3, 10, -10], 5, 2000);
+    blastTarget(env, [0, 10, -10], 5, 2000);
     const pancake = env.collapse.pancakes[0]!;
     env.collapse.drainBursts();
     const landedAt: number[] = [];

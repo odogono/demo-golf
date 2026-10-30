@@ -343,28 +343,67 @@ export function createStructure(options: StructureOptions) {
   }
 
   /**
-   * Whether the Cells above `layer` would topple off its footprint. Returns the
-   * pivot edge in grid (x, z) if they would.
+   * The first piece above `layer` that would topple off its footprint, with
+   * the pivot edge in grid (x, z). Each piece is checked on its own: an island
+   * of Cells joined above the layer, standing on the groups of layer Cells it
+   * rests on. So a tower beside a hall can Tip without the hall, and Cells
+   * left standing under nothing don't widen anyone's footprint.
    */
-  function tipPivot(layer: number): [number, number, number, number] | undefined {
-    const corners: number[] = [];
-    let total = 0;
-    let cx = 0;
-    let cz = 0;
-    for (let i = 0; i < count; i++) {
-      if (!alive[i]) continue;
-      const [x, y, z] = coords(i);
-      if (y === layer) corners.push(x, z, x + 1, z, x + 1, z + 1, x, z + 1);
-      else if (y > layer) {
+  function tipping(layer: number): { cells: number[]; pivot: [number, number, number, number] } | undefined {
+    const layerSize = nx * nz;
+    const groups = layerGroups(layer);
+    const groupOf = new Int32Array(layerSize).fill(-1);
+    groups.forEach((group, g) => group.forEach((col) => (groupOf[col] = g)));
+    const seen = new Uint8Array(count);
+    const islands: number[][] = [];
+    for (let start = layerSize * (layer + 1); start < count; start++) {
+      if (!alive[start] || seen[start]) continue;
+      // One island above the layer.
+      const island = [start];
+      seen[start] = 1;
+      for (let k = 0; k < island.length; k++) {
+        const [x, y, z] = coords(island[k]!);
+        for (const [dx, dy, dz] of NEIGHBOURS) {
+          if (y + dy <= layer || !isAlive(x + dx, y + dy, z + dz)) continue;
+          const j = index(x + dx, y + dy, z + dz);
+          if (seen[j]) continue;
+          seen[j] = 1;
+          island.push(j);
+        }
+      }
+      islands.push(island);
+    }
+    for (const island of islands) {
+      // It stands on every group of layer Cells it rests on.
+      const under = new Set<number>();
+      let total = 0;
+      let cx = 0;
+      let cz = 0;
+      for (const i of island) {
+        const [x, y, z] = coords(i);
         total += mass[i]!;
         cx += mass[i]! * (x + 0.5);
         cz += mass[i]! * (z + 0.5);
+        const g = y === layer + 1 ? groupOf[x + nx * z]! : -1;
+        if (g >= 0) under.add(g);
       }
+      if (under.size === 0 || total === 0) continue;
+      const corners: number[] = [];
+      for (const g of under) {
+        for (const col of groups[g]!) {
+          const x = col % nx;
+          const z = Math.floor(col / nx);
+          corners.push(x, z, x + 1, z, x + 1, z + 1, x, z + 1);
+        }
+      }
+      const pivot = pivotOff(corners, cx / total, cz / total);
+      if (pivot) return { cells: island.sort((a, b) => a - b), pivot };
     }
-    if (total === 0 || corners.length === 0) return undefined;
-    cx /= total;
-    cz /= total;
+    return undefined;
+  }
 
+  /** The edge of the hull of `corners` that a centre of mass at (cx, cz) would topple over, if it would. */
+  function pivotOff(corners: number[], cx: number, cz: number): [number, number, number, number] | undefined {
     const hull = quickhull2(corners);
     const verts = hull.flatMap((h) => [corners[2 * h]!, corners[2 * h + 1]!]);
     const n = hull.length;
@@ -385,12 +424,6 @@ export function createStructure(options: StructureOptions) {
       }
     }
     return inside && nearest >= tipMargin ? undefined : pivot;
-  }
-
-  function cellsAbove(layer: number): number[] {
-    const cells: number[] = [];
-    for (let i = nx * nz * (layer + 1); i < count; i++) if (alive[i]) cells.push(i);
-    return cells;
   }
 
   return {
@@ -469,9 +502,9 @@ export function createStructure(options: StructureOptions) {
       layers: for (;;) {
         for (let y = 0; y < ny; y++) {
           if (layerDamaged[y]) {
-            const pivot = tipPivot(y);
-            if (pivot) {
-              const cells = cellsAbove(y);
+            const tip = tipping(y);
+            if (tip) {
+              const { cells, pivot } = tip;
               cells.forEach(remove);
               const [ax, az, bx, bz] = pivot;
               const [ox, , oz] = origin;

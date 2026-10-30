@@ -146,7 +146,7 @@ export type BlueprintCell = {
 /** Says, for each Cell of a grid of `size`, whether it is empty or what it is made of. */
 export type Blueprint = (x: number, y: number, z: number) => BlueprintCell | undefined;
 
-export type BlueprintName = "frame" | "lighthouse" | "car-park" | "glass-office" | "arch-bridge";
+export type BlueprintName = "frame" | "lighthouse" | "car-park" | "glass-office" | "arch-bridge" | "church";
 
 export type FrameOptions = {
   size: readonly [number, number, number];
@@ -603,6 +603,144 @@ export function archBridgeBlueprint({ size: [nx, ny, nz] }: FrameOptions): Bluep
   };
 }
 
+const DOOR = 0x7a4b2a;
+const BELL = 0x3d4a52;
+
+/**
+ * A village church, long along z. At the front stands a round, hollow bell
+ * tower banded in coral, with an open belfry, a bell (an Ornament) and a blue
+ * cone spire. Behind it, just clear of the tower so the two stand as separate
+ * pieces, is a cream nave: walls with arched glass windows and an arched
+ * door, a coral band under a blue barrel-vault roof curved about z, and a
+ * round apse at the back under a domed roof. It all stands on a round-cornered
+ * stone plinth (its Foundation). The tower can Tip on its own while the nave
+ * stands, given a `tipMargin` near 2 like the lighthouse's. It needs `size`
+ * about 10 × 21 × 20. The tower faces +z.
+ */
+export function churchBlueprint(options: FrameOptions): Blueprint {
+  // Laid out with the tower at z = 0, then turned to face +z, towards the Tee.
+  const plan = churchFacingAway(options);
+  const nz = options.size[2];
+  const flip = (z: number) => nz - z;
+  return (x, y, z) => {
+    const cell = plan(x, y, nz - 1 - z);
+    if (!cell) return undefined;
+    return {
+      ...cell,
+      trim: cell.trim?.map((t) => {
+        if (t.axis === "z") return { ...t, bottom: 1 - (t.top ?? 1), top: 1 - (t.bottom ?? 0) };
+        if (t.axis === "x") return { ...t, centre: [t.centre[0], flip(t.centre[1])] };
+        return { ...t, centre: [t.centre[0], flip(t.centre[1])] };
+      }),
+      ornaments: cell.ornaments?.map((o) =>
+        o.kind === "box"
+          ? { ...o, min: [o.min[0], o.min[1], 1 - o.max[2]], max: [o.max[0], o.max[1], 1 - o.min[2]] }
+          : { ...o, centre: [o.centre[0], 1 - o.centre[1]] },
+      ),
+    };
+  };
+}
+
+function churchFacingAway({ size: [nx, ny, nz] }: FrameOptions): Blueprint {
+  const mid = nx / 2;
+  // The tower: round and hollow, at the front.
+  const tower: [number, number] = [mid, 3.4];
+  const towerRadius = 2.5;
+  const towerWall = 0.8;
+  const belfry = ny - 9;
+  const towerTop = ny - 6;
+  // The nave: from just behind the tower to the apse.
+  const front = 7;
+  const apse = nz - 5;
+  const eaves = 7;
+  const vault: [number, number] = [mid, eaves + 1];
+  const vaultRadius = mid;
+
+  const cell = (material: MaterialName, colour: number, trim?: Trim[], ornaments?: Ornament[]): BlueprintCell => ({
+    material,
+    colour,
+    trim: trim && trim.length > 0 ? trim : undefined,
+    ornaments: ornaments && ornaments.length > 0 ? ornaments : undefined,
+  });
+  /** Cell (x, z) cut to a vertical piece about `at`, if it reaches it: an empty trim when wholly inside. */
+  function round(x: number, z: number, at: [number, number], piece: Piece): Trim[] | undefined {
+    const { near, far } = reach(x, z, at);
+    const outer = Math.max(piece.outer, piece.outerTop ?? piece.outer);
+    if (near >= outer - SLIVER || far <= Math.max(piece.inner ?? 0, piece.innerTop ?? 0) + SLIVER) return undefined;
+    const whole = far <= Math.min(piece.outer, piece.outerTop ?? piece.outer) && piece.inner === undefined && piece.top === undefined;
+    return whole ? [] : [{ centre: at, ...piece }];
+  }
+
+  return (x, y, z) => {
+    if (y === 0) {
+      // The plinth: the whole footprint with rounded corners.
+      const cx = x < 2 ? 2 : x >= nx - 2 ? nx - 2 : undefined;
+      const cz = z < 2 ? 2 : z >= nz - 2 ? nz - 2 : undefined;
+      if (cx === undefined || cz === undefined) return cell("stone", STONE);
+      const trim = round(x, z, [cx, cz], { outer: 2 });
+      return trim && cell("stone", STONE, trim);
+    }
+
+    // The bell tower.
+    if (z < front - 0.5) {
+      if (y < towerTop) {
+        const band = y % 5 === 4;
+        const open = y >= belfry && y < belfry + 3 && Math.abs(x + 0.5 - mid) > 0.6 && Math.abs(z + 0.5 - tower[1]) > 0.6;
+        if (open) return undefined;
+        const floor = y === belfry - 1;
+        const trim = round(x, z, tower, floor ? { outer: towerRadius } : { outer: towerRadius, inner: towerRadius - towerWall });
+        const bell: Ornament[] =
+          y === belfry && x === Math.floor(tower[0]) && z === Math.floor(tower[1])
+            ? [
+                { kind: "cylinder", centre: [0, 0.4], radius: 0.45, bottom: 0.2, top: 1.1, colour: BELL },
+                { kind: "cylinder", centre: [0, 0.4], radius: 0.2, bottom: 1.1, top: 1.5, colour: BELL },
+              ]
+            : [];
+        return trim && cell("stone", band ? CORAL : WHITE, trim, floor ? bell : undefined);
+      }
+      const k = y - towerTop;
+      const radii = [towerRadius + 0.2, towerRadius * 0.7, towerRadius * 0.4, towerRadius * 0.15, 0.08];
+      if (k >= radii.length - 1) return undefined;
+      const trim = round(x, z, tower, { outer: radii[k]!, outerTop: radii[k + 1]! });
+      return trim && cell("stone", k === 0 ? CORAL : ROOF_BLUE, trim);
+    }
+
+    // The nave's walls, front and sides, and the apse's round wall.
+    const inApse = z >= apse;
+    if (y <= eaves) {
+      const band = y === eaves;
+      if (inApse) {
+        const trim = round(x, z, [mid, apse], { outer: mid, inner: band ? undefined : mid - 1 });
+        return trim && cell("stone", band ? CORAL : WHITE, trim);
+      }
+      const side = x === 0 || x === nx - 1;
+      const face = z === front;
+      if (!side && !face && !band) return undefined;
+      if (band && !side && !face) return undefined;
+      const window = side && !band && (z - front) % 2 === 1 && y >= 2 && y <= 5;
+      const door = face && !band && Math.abs(x + 0.5 - mid) < 1 && y <= 3;
+      if (door) return cell("stone", DOOR);
+      return cell(window ? "glass" : "stone", band ? CORAL : window ? GLASS : WHITE);
+    }
+
+    // The roof: a barrel vault over the nave, a dome over the apse.
+    if (inApse) {
+      const h = y - vault[1];
+      if (h >= vaultRadius) return undefined;
+      const r0 = Math.sqrt(vaultRadius ** 2 - h * h);
+      const r1 = Math.sqrt(Math.max(0, vaultRadius ** 2 - (h + 1) ** 2));
+      const trim = round(x, z, [mid, apse], { outer: r0, outerTop: r1 });
+      return trim && cell("stone", ROOF_BLUE, trim);
+    }
+    const { near, far } = reach(x, y, vault);
+    if (near >= vaultRadius - SLIVER) return undefined;
+    // The front gable closes the vault's end.
+    if (z === front) return cell("stone", WHITE, far <= vaultRadius ? undefined : [{ axis: "z", centre: vault, outer: vaultRadius }]);
+    if (far <= vaultRadius - 0.9 + SLIVER) return undefined;
+    return cell("stone", ROOF_BLUE, [{ axis: "z", centre: vault, outer: vaultRadius, inner: vaultRadius - 0.9 }]);
+  };
+}
+
 /** A Blueprint whose ground layer, its plinth or footings, is a Foundation. */
 function onFoundation(make: (options: FrameOptions) => Blueprint): (options: FrameOptions) => Blueprint {
   return (options) => {
@@ -620,4 +758,5 @@ export const BLUEPRINTS: Record<BlueprintName, (options: FrameOptions) => Bluepr
   "car-park": onFoundation(carParkBlueprint),
   "glass-office": onFoundation(glassOfficeBlueprint),
   "arch-bridge": onFoundation(archBridgeBlueprint),
+  church: onFoundation(churchBlueprint),
 };

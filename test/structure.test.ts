@@ -247,18 +247,15 @@ describe("the arch bridge Blueprint", () => {
     expect(s.alive[s.index(12, 8, 3)]).toBe(1);
   });
 
-  test("cut across the span on both sides of the crown, the middle Detaches", () => {
+  test("cut across the span near one end, the rest of the span Tips off what is left", () => {
     const s = bridge();
     s.applyBlast([7, 7, 3.5], 4.5, 500);
-    s.evaluate();
-    s.applyBlast([17, 7, 3.5], 4.5, 500);
-    const detached = s.evaluate().filter((e) => e.kind === "detach");
-    expect(detached).toHaveLength(1);
-    const xs = (detached[0] as { cells: number[] }).cells.map((i) => s.coords(i)[0]);
+    const tip = s.evaluate().find((e) => e.kind === "tip" && e.cells.length > 100);
+    expect(tip).toBeDefined();
+    const xs = (tip as { cells: number[] }).cells.map((i) => s.coords(i)[0]);
+    // It's the span beyond the cut, not the end that was cut.
     expect(Math.min(...xs)).toBeGreaterThan(7);
-    expect(Math.max(...xs)).toBeLessThan(17);
-    // Both ends still stand: their pillars and abutments.
-    for (const x of [1, 3, 20, 22]) expect(s.alive[s.index(x, 5, 0)]).toBe(1);
+    expect(s.alive[s.index(1, 5, 0)]).toBe(1);
   });
 });
 
@@ -337,5 +334,50 @@ describe("a whole-layer Crush (#57)", () => {
     const crush = events.find((e) => e.kind === "crush" && e.falling.length > 0);
     expect(crush).toBeDefined();
     expect(events.some((e) => e.kind === "detach" && e.cells.length > 20)).toBe(false);
+  });
+});
+
+describe("Tip per piece", () => {
+  test("of two towers on one base, the one cut low Tips on its own", () => {
+    // A 7 × 3 base slab with a 2 × 3 tower five high at each end.
+    const [nx, ny, nz] = [7, 6, 3];
+    const count = nx * ny * nz;
+    const alive = new Uint8Array(count);
+    const at = (x: number, y: number, z: number) => x + nx * (z + nz * y);
+    for (let x = 0; x < nx; x++) for (let z = 0; z < nz; z++) alive[at(x, 0, z)] = 1;
+    for (let y = 1; y < ny; y++) for (const x of [0, 1, 5, 6]) for (let z = 0; z < nz; z++) alive[at(x, y, z)] = 1;
+    const s = createStructure({
+      size: [nx, ny, nz],
+      tipMargin: 0.25,
+      cells: { alive, mass: new Float32Array(count).fill(1), integrity: new Float32Array(count).fill(100), material: new Uint8Array(count), colour: new Uint32Array(count) },
+    });
+    // Take away the inner half of the left tower's lowest storey.
+    for (let z = 0; z < nz; z++) s.applyBlast([1.5, 1.5, z + 0.5], 0.1, 1e6);
+    const tips = s.evaluate().filter((e) => e.kind === "tip");
+    expect(tips).toHaveLength(1);
+    const xs = new Set((tips[0] as { cells: number[] }).cells.map((i) => s.coords(i)[0]));
+    expect([...xs].sort()).toEqual([0, 1]);
+    expect(s.alive[at(6, 5, 1)]).toBe(1);
+  });
+});
+
+describe("the church Blueprint", () => {
+  const church = () => createStructure(splitFoundation({ size: [10, 21, 20], blueprint: "church", tipMargin: 2 }).options);
+
+  test("stands undamaged, its tower apart from its nave", () => {
+    const s = church();
+    expect(s.evaluate()).toEqual([]);
+    expect(s.height()).toBeGreaterThan(16);
+  });
+
+  test("hit low on its tower, the tower Tips on its own and the nave stands", () => {
+    const s = church();
+    s.applyBlast([5, 1, 19], 3, 150);
+    const tips = s.evaluate().filter((e) => e.kind === "tip");
+    expect(tips).toHaveLength(1);
+    const zs = (tips[0] as { cells: number[] }).cells.map((i) => s.coords(i)[2]);
+    // All of it is tower, at the front; the nave is behind the gap at z = 13.
+    expect(Math.min(...zs)).toBeGreaterThan(12);
+    expect(s.alive[s.index(0, 5, 8)]).toBe(1);
   });
 });

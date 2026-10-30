@@ -1,5 +1,5 @@
 import type { Vec3 } from "math";
-import { LIGHTHOUSE } from "./hole";
+import { CHURCH, LIGHTHOUSE } from "./hole";
 import type { BallTypeId } from "./shot/ball-types";
 import type { StructureOptions } from "./structure/structure";
 
@@ -62,6 +62,17 @@ export const SCENARIOS: Scenario[] = [
       { shot: { from: [-5, 0, 4], at: [-5, 6.5, -9], ball: "explosive" } },
       { shot: { from: [5, 0, 4], at: [4, 6.5, -9], ball: "explosive" } },
       { shot: { from: [0, 0, 4], at: [0, 6.5, -9], ball: "explosive" } },
+    ],
+  },
+  {
+    name: "church",
+    building: CHURCH,
+    steps: [
+      // A standard ball only bites the tower.
+      { shot: { from: [0, 0, 4], at: [0, 4, -2.9], ball: "standard" } },
+      // An explosive one low on its front Tips the tower over, away from the nave, which stands.
+      { shot: { from: [0, 0, 4], at: [0, 2.5, -2.9], ball: "explosive" } },
+      { shot: { from: [5, 0, 4], at: [4.5, 4, -10], ball: "explosive" } },
     ],
   },
 ];
