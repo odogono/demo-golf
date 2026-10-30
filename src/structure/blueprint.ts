@@ -133,6 +133,12 @@ export type BlueprintCell = {
   /** The Cell's true shape, as the union of these pieces; a whole cube if absent. */
   trim?: Trim[];
   ornaments?: Ornament[];
+  /**
+   * Part of the Foundation: the fixed plinth the building stands on, which is
+   * never damaged and isn't counted as Destroyed. Only the ground layer may be,
+   * and then all of it.
+   */
+  foundation?: true;
 };
 
 /** Says, for each Cell of a grid of `size`, whether it is empty or what it is made of. */
@@ -595,10 +601,21 @@ export function archBridgeBlueprint({ size: [nx, ny, nz] }: FrameOptions): Bluep
   };
 }
 
+/** A Blueprint whose ground layer, its plinth or footings, is a Foundation. */
+function onFoundation(make: (options: FrameOptions) => Blueprint): (options: FrameOptions) => Blueprint {
+  return (options) => {
+    const plan = make(options);
+    return (x, y, z) => {
+      const cell = plan(x, y, z);
+      return cell && y === 0 ? { ...cell, foundation: true } : cell;
+    };
+  };
+}
+
 export const BLUEPRINTS: Record<BlueprintName, (options: FrameOptions) => Blueprint> = {
   frame: frameBlueprint,
-  lighthouse: lighthouseBlueprint,
-  "car-park": carParkBlueprint,
-  "glass-office": glassOfficeBlueprint,
-  "arch-bridge": archBridgeBlueprint,
+  lighthouse: onFoundation(lighthouseBlueprint),
+  "car-park": onFoundation(carParkBlueprint),
+  "glass-office": onFoundation(glassOfficeBlueprint),
+  "arch-bridge": onFoundation(archBridgeBlueprint),
 };

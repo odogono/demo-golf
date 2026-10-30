@@ -54,7 +54,7 @@
 
 **Terrain** — The ground of a Hole. It can be lowered by a Blast but never raised, and it never decides whether a Structure holds or falls.
 
-**Foundation** — The fixed, indestructible plinth a Structure stands on. It is not made of Cells, is never damaged and stays after its Structure has fallen.
+**Foundation** — The fixed, indestructible plinth a Structure stands on. A Blueprint lays it out as its ground layer, but it is not part of the Structure: it is never damaged, never counts as Destroyed, and stays after its Structure has fallen. Rubble rests on it and the ball rolls on it as on the ground.
 
 **Crater** — A dip that a ball's Blast leaves in the Terrain where its radius reaches the ground. It never reaches into a Foundation, and it lasts until the Hole ends.
 
