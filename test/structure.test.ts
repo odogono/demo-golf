@@ -226,3 +226,29 @@ describe("the glass office Blueprint", () => {
     expect(s.height()).toBe(21);
   });
 });
+
+describe("the arch bridge Blueprint", () => {
+  const bridge = () => createStructure({ size: [24, 10, 7], blueprint: "arch-bridge" });
+
+  test("stands undamaged, with an open arch under the deck", () => {
+    const s = bridge();
+    expect(s.evaluate()).toEqual([]);
+    expect(s.height()).toBe(10);
+    expect(s.alive[s.index(12, 3, 3)]).toBe(0);
+    expect(s.alive[s.index(12, 8, 3)]).toBe(1);
+  });
+
+  test("cut across the span on both sides of the crown, the middle Detaches", () => {
+    const s = bridge();
+    s.applyBlast([7, 7, 3.5], 4.5, 500);
+    s.evaluate();
+    s.applyBlast([17, 7, 3.5], 4.5, 500);
+    const detached = s.evaluate().filter((e) => e.kind === "detach");
+    expect(detached).toHaveLength(1);
+    const xs = (detached[0] as { cells: number[] }).cells.map((i) => s.coords(i)[0]);
+    expect(Math.min(...xs)).toBeGreaterThan(7);
+    expect(Math.max(...xs)).toBeLessThan(17);
+    // Both ends still stand: their pillars and abutments.
+    for (const x of [1, 3, 20, 22]) expect(s.alive[s.index(x, 5, 0)]).toBe(1);
+  });
+});

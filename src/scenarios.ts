@@ -51,6 +51,16 @@ export const SCENARIOS: Scenario[] = [
       { shot: { from: [0, 0, 4], at: [-1.5, 10.5, -6.5], ball: "explosive" } },
     ],
   },
+  {
+    name: "arch-bridge",
+    building: { origin: [-12, 0, -16], size: [24, 10, 7], blueprint: "arch-bridge" },
+    steps: [
+      // Cut right across the span on both sides of the crown, and the middle drops.
+      { blast: { center: [-5, 7, -12.5], radius: 4.5, power: 500 } },
+      { blast: { center: [5, 7, -12.5], radius: 4.5, power: 500 } },
+      { shot: { from: [-4, 0, 4], at: [-8, 6, -9], ball: "explosive" } },
+    ],
+  },
 ];
 
 export function scenarioNamed(name: string): Scenario | undefined {

@@ -61,6 +61,20 @@ function uprightPiece(x: number, y: number, z: number, trim: Trim): CellMesh {
   }
   const { centre, outer, outerTop = outer, inner, innerTop = inner, bottom = 0, top = 1 } = trim;
   const radius = (r0: number, r1: number, h: number) => r0 + (r1 - r0) * h;
+  // A solid post standing wholly inside the cube is just its frustum: cutting
+  // it would only shatter it into thousands of slivers.
+  const widest = Math.max(radius(outer, outerTop, bottom), radius(outer, outerTop, top));
+  if (inner === undefined && centre[0] - widest >= x && centre[0] + widest <= x + 1 && centre[1] - widest >= z && centre[1] + widest <= z + 1) {
+    const post = frustum(centre, y + bottom, y + top, radius(outer, outerTop, bottom), radius(outer, outerTop, top));
+    const flat = post.geometry.toNonIndexed();
+    post.geometry.dispose();
+    const mesh = {
+      position: (flat.getAttribute("position").array as Float32Array).slice(),
+      normal: (flat.getAttribute("normal").array as Float32Array).slice(),
+    };
+    flat.dispose();
+    return mesh;
+  }
   const cube = new Brush(toGeometry(cellBox(x, y, z)));
   cube.updateMatrixWorld();
   const shell = frustum(centre, y + bottom, y + top, radius(outer, outerTop, bottom), radius(outer, outerTop, top));
