@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { Brush, Evaluator, INTERSECTION, SUBTRACTION } from "three-bvh-csg";
-import { AXIS_FRAME, type Trim } from "../structure/blueprint";
+import { AXIS_FRAME, MATERIAL_NAMES, type Trim } from "../structure/blueprint";
 import type { Structure } from "../structure/structure";
 import { toGeometry } from "./bite";
 import { cellBox, type CellMesh } from "./building-geometry";
@@ -120,4 +120,11 @@ export function trimmedCells(structure: Structure): Map<number, CellMesh> {
   }
   cache.set(structure, cells);
   return cells;
+}
+
+const GLASS = MATERIAL_NAMES.indexOf("glass");
+
+/** Which of a Structure's Cells are drawn see-through: its glass. */
+export function clearCells(structure: Structure): Uint8Array {
+  return structure.material.map((m) => (m === GLASS ? 1 : 0));
 }

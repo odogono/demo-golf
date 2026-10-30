@@ -42,6 +42,15 @@ export const SCENARIOS: Scenario[] = [
       { shot: { from: [0, 0, 4], at: [-1, 7.5, -6], ball: "standard" } },
     ],
   },
+  {
+    name: "glass-office",
+    building: { origin: [-4.5, 0, -14.5], size: [9, 21, 9], floorHeight: 3, blueprint: "glass-office" },
+    steps: [
+      { blast: { center: [0, 8, -6.5], radius: 1.5, power: 60 } },
+      { shot: { from: [0, 0, 4], at: [1.5, 4.5, -6.5], ball: "standard" } },
+      { shot: { from: [0, 0, 4], at: [-1.5, 10.5, -6.5], ball: "explosive" } },
+    ],
+  },
 ];
 
 export function scenarioNamed(name: string): Scenario | undefined {

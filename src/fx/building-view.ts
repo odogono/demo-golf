@@ -2,10 +2,10 @@ import * as THREE from "three";
 import type { BlastOutcome, Building } from "../damage/buildings";
 import type { Port } from "../worker-port";
 import type { CsgReply, CsgRequest } from "./bite";
-import { createBlockMaterial } from "./block-material";
-import { buildingMesh } from "./building-geometry";
+import { buildingGeometry, createBuildingMaterials } from "./block-material";
+import { buildingMesh, type BuildingMesh } from "./building-geometry";
 import { ornamentedCells } from "./ornament";
-import { trimmedCells } from "./trim";
+import { clearCells, trimmedCells } from "./trim";
 
 /** A Bite's radius as a fraction of its Blast's, at full power. */
 const BITE_SCALE = 0.6;
@@ -18,33 +18,28 @@ const FULL_BITE_POWER = 150;
  * `drain` swaps it in.
  */
 export function createBuildingViews(scene: THREE.Scene, port: Port<CsgRequest, CsgReply>) {
-  const material = createBlockMaterial();
+  const material = createBuildingMaterials();
   const meshes: THREE.Mesh[] = [];
   const arrived: CsgReply[] = [];
   let generation = 0;
   let seed = 1;
   port.onReply((reply) => arrived.push(reply));
 
-  function setGeometry(mesh: THREE.Mesh, position: Float32Array, normal: Float32Array, colour: Float32Array) {
+  function setGeometry(mesh: THREE.Mesh, built: BuildingMesh) {
     mesh.geometry.dispose();
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.BufferAttribute(position, 3));
-    geometry.setAttribute("normal", new THREE.BufferAttribute(normal, 3));
-    geometry.setAttribute("color", new THREE.BufferAttribute(colour, 3));
-    geometry.computeBoundingSphere();
-    mesh.geometry = geometry;
+    mesh.geometry = buildingGeometry(built);
   }
 
   function add({ id, structure }: Building) {
     const mesh = new THREE.Mesh(new THREE.BufferGeometry(), material);
-    const { position, normal, colour } = buildingMesh({ size: structure.size, colour: structure.colour, alive: structure.alive, cut: trimmedCells(structure), ornaments: ornamentedCells(structure) });
-    setGeometry(mesh, position, normal, colour);
+    const clear = clearCells(structure);
+    setGeometry(mesh, buildingMesh({ size: structure.size, colour: structure.colour, alive: structure.alive, cut: trimmedCells(structure), ornaments: ornamentedCells(structure), clear }));
     mesh.position.set(...structure.origin);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     scene.add(mesh);
     meshes[id] = mesh;
-    port.send({ type: "create", id, generation, size: [...structure.size], alive: structure.alive.slice(), colour: structure.colour, cut: trimmedCells(structure), ornaments: ornamentedCells(structure) });
+    port.send({ type: "create", id, generation, size: [...structure.size], alive: structure.alive.slice(), colour: structure.colour, cut: trimmedCells(structure), ornaments: ornamentedCells(structure), clear });
   }
 
   return {
@@ -92,7 +87,7 @@ export function createBuildingViews(scene: THREE.Scene, port: Port<CsgRequest, C
       for (const reply of arrived.splice(0)) {
         const mesh = meshes[reply.id];
         if (!mesh || reply.generation !== generation) continue;
-        setGeometry(mesh, reply.position, reply.normal, reply.colour);
+        setGeometry(mesh, reply);
         times.push(reply.ms);
       }
       return times;
