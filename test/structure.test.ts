@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { MATERIAL_NAMES } from "../src/structure/blueprint";
+import { MATERIAL_NAMES, MATERIALS } from "../src/structure/blueprint";
 import { createStructure } from "../src/structure/structure";
 
 const target = () => createStructure({ size: [8, 20, 8] });
@@ -258,5 +258,27 @@ describe("the arch bridge Blueprint", () => {
     expect(Math.max(...xs)).toBeLessThan(17);
     // Both ends still stand: their pillars and abutments.
     for (const x of [1, 3, 20, 22]) expect(s.alive[s.index(x, 5, 0)]).toBe(1);
+  });
+});
+
+describe("Materials", () => {
+  test("one Blast destroys a glass Cell but only damages the stone Cell beside it", () => {
+    const glass = MATERIAL_NAMES.indexOf("glass");
+    const stone = MATERIAL_NAMES.indexOf("stone");
+    const s = createStructure({
+      size: [2, 1, 1],
+      cells: {
+        alive: new Uint8Array([1, 1]),
+        mass: new Float32Array([1, 1]),
+        integrity: new Float32Array([100 * MATERIALS.glass.toughness, 100 * MATERIALS.stone.toughness]),
+        material: new Uint8Array([glass, stone]),
+        colour: new Uint32Array(2),
+      },
+    });
+    // Centred between the two, so both take the same hit.
+    const result = s.applyBlast([1, 0.5, 0.5], 1, 100);
+    expect(result.destroyed).toEqual([0]);
+    expect(result.damaged).toEqual([1]);
+    expect(s.alive[1]).toBe(1);
   });
 });
