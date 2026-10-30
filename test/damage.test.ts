@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { createBuildings, inlineStructures } from "../src/damage/buildings";
-import { createDamage, DEFAULT_DAMAGE } from "../src/damage/damage";
+import { createDamage } from "../src/damage/damage";
+import { DEFAULT_ROUND } from "../src/game/round";
 import { createDebris } from "../src/damage/debris";
 import { createCrashcatWorld } from "../src/physics/crashcat";
 import { BALL_TYPES } from "../src/shot/ball-types";
-import { launchBall } from "../src/shot/shot";
+import { createRestCheck, launchBall } from "../src/shot/shot";
 import { structureColliders } from "../src/structure/colliders";
 import { createStructure } from "../src/structure/structure";
 
@@ -16,7 +17,7 @@ function setup(cap = 150) {
   world.addBody({ shape: { kind: "box", halfExtents: [100, 0.5, 100] }, motion: "static", position: [0, -0.5, 0] });
   const buildings = createBuildings(world, inlineStructures(), [TARGET]);
   const debris = createDebris(world, { cap, otherBodies: () => (damage.ball === undefined ? 0 : 1) });
-  const damage = createDamage(world, buildings, debris, { ...DEFAULT_DAMAGE });
+  const damage = createDamage(world, buildings, debris);
   return { world, buildings, debris, damage };
 }
 
@@ -27,7 +28,7 @@ function fire(env: ReturnType<typeof setup>, type: keyof typeof BALL_TYPES, spee
   const hits = [];
   for (let n = 0; n < 120 && hits.length === 0; n++) {
     env.world.step(DT);
-    hits.push(...env.damage.update(DT));
+    hits.push(...env.damage.update());
   }
   return hits;
 }
@@ -48,38 +49,44 @@ describe("colliders", () => {
 });
 
 describe("hits", () => {
-  test("a standard ball's hit becomes a Blast scaled by the contact impulse", () => {
-    const soft = fire(setup(), "standard", 12);
-    const hard = fire(setup(), "standard", 36);
-    expect(soft).toHaveLength(1);
-    expect(hard).toHaveLength(1);
-    expect(hard[0]!.blast.radius).toBe(DEFAULT_DAMAGE.hitRadius);
-    expect(hard[0]!.blast.power).toBeGreaterThan(2 * soft[0]!.blast.power);
-    // The Blast is on the Target's front face, and Debris flies back out of it.
-    expect(hard[0]!.blast.center[2]).toBeCloseTo(-6, 0);
-    expect(hard[0]!.blast.outward[2]).toBeGreaterThan(0.9);
+  test("every ball sets off its own Blast on touching a building, whatever its speed, and is used up", () => {
+    for (const type of ["standard", "explosive"] as const) {
+      for (const speed of [8, 30]) {
+        const env = setup();
+        const hits = fire(env, type, speed);
+        expect(hits).toHaveLength(1);
+        expect(hits[0]!.blast.radius).toBe(BALL_TYPES[type].blast.radius);
+        expect(hits[0]!.blast.power).toBe(BALL_TYPES[type].blast.power);
+        expect(hits[0]!.buildings).toHaveLength(1);
+        expect(env.damage.ball).toBeUndefined();
+      }
+    }
   });
 
-  test("a gentle touch does no damage", () => {
-    expect(fire(setup(), "standard", 2)).toHaveLength(0);
+  test("the Blast is on the Target's front face, and Debris flies back out of it", () => {
+    const [hit] = fire(setup(), "standard", 30);
+    expect(hit!.blast.center[2]).toBeCloseTo(-6, 0);
+    expect(hit!.blast.outward[2]).toBeGreaterThan(0.9);
   });
 
-  test("an explosive ball sets off its large Blast on contact and is used up", () => {
-    const env = setup();
-    const hits = fire(env, "explosive", 20);
-    expect(hits).toHaveLength(1);
-    expect(hits[0]!.blast.radius).toBe(BALL_TYPES.explosive.blast.radius);
-    expect(hits[0]!.buildings).toHaveLength(1);
-    expect(env.damage.ball).toBeUndefined();
-  });
-
-  test("an explosive ball doesn't go off on the ground it's launched from", () => {
-    const env = setup();
-    const ball = launchBall(env.world, BALL_TYPES.explosive, [0, 8, -20], [0, 0, 6]);
-    env.damage.track(ball, BALL_TYPES.explosive);
-    env.world.step(DT);
-    expect(env.damage.update(DT)).toHaveLength(0);
-    expect(env.damage.ball).toBe(ball);
+  test("a ball landing hard on the ground away from buildings doesn't go off and comes to rest", () => {
+    for (const type of ["standard", "explosive"] as const) {
+      const env = setup();
+      // Lobbed away from the Target, so it thumps down on open ground.
+      const ball = launchBall(env.world, BALL_TYPES[type], [0, 8, 12], [0, 0, 6]);
+      env.damage.track(ball, BALL_TYPES[type]);
+      // It must come to rest within the settle timeout, or it would count as out of play.
+      const rest = createRestCheck();
+      let rested = false;
+      for (let n = 0; n < DEFAULT_ROUND.settleTimeout * 60 && !rested; n++) {
+        env.world.step(DT);
+        expect(env.damage.update()).toHaveLength(0);
+        rested = rest.update(Math.hypot(...env.world.getLinearVelocity(ball)), DT);
+      }
+      expect(env.damage.ball).toBe(ball);
+      expect(rested).toBe(true);
+      expect(env.world.getPosition(ball)[2]).toBeGreaterThan(6);
+    }
   });
 
   test("the Structure's results arrive through drain and update the grid and collider", () => {
@@ -99,7 +106,7 @@ describe("hits", () => {
 describe("Debris", () => {
   test("each hit throws 5–15 pieces", () => {
     const env = setup();
-    fire(env, "standard", 36);
+    fire(env, "standard", 30);
     expect(env.debris.live.length).toBeGreaterThanOrEqual(5);
     expect(env.debris.live.length).toBeLessThanOrEqual(15);
   });
@@ -110,7 +117,7 @@ describe("Debris", () => {
     for (let n = 0; n < 4; n++) env.debris.spawn([0, 2 + n, -5], [0, 0, -1], 15);
     for (let n = 0; n < 60; n++) {
       env.world.step(DT);
-      expect(env.damage.update(DT)).toHaveLength(0);
+      expect(env.damage.update()).toHaveLength(0);
     }
     expect(env.buildings.drain()).toHaveLength(0);
   });

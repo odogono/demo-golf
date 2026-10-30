@@ -4,7 +4,7 @@
 // Structure's results and Debris.
 import * as THREE from "three";
 import { createBuildings, inlineStructures } from "../src/damage/buildings";
-import { createDamage, DEFAULT_DAMAGE } from "../src/damage/damage";
+import { createDamage } from "../src/damage/damage";
 import { createDebris } from "../src/damage/debris";
 import { createBiteCutter } from "../src/fx/bite";
 import { createBuildingViews } from "../src/fx/building-view";
@@ -22,7 +22,7 @@ const world = createCrashcatWorld();
 world.addBody({ shape: { kind: "box", halfExtents: [100, 0.5, 100] }, motion: "static", position: [0, -0.5, 0] });
 const buildings = createBuildings(world, inlineStructures(), BUILDINGS);
 const debris = createDebris(world, { cap: 150, otherBodies: () => (damage.ball === undefined ? 0 : 1) });
-const damage = createDamage(world, buildings, debris, { ...DEFAULT_DAMAGE });
+const damage = createDamage(world, buildings, debris);
 const cutter = createBiteCutter();
 const views = createBuildingViews(new THREE.Scene(), inlinePort((r) => cutter.handle(r)));
 views.reset(buildings.list);
@@ -44,7 +44,7 @@ function step() {
     inWorkers += performance.now() - before;
   }
   world.step(DT);
-  blasts += damage.update(DT).length;
+  blasts += damage.update().length;
   debris.update();
   frame.push(performance.now() - start - inWorkers);
 }
