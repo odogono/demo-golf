@@ -25,11 +25,11 @@ import { BALL_TYPES, type BallType } from "./shot/ball-types";
 import { createPowerMeter } from "./shot/power-meter";
 import { TEE, launchBall } from "./shot/shot";
 import { predictTrajectory } from "./shot/trajectory";
+import { DEFAULT_ROUND, createRound, scoreName } from "./game/round";
 import { BUILDINGS } from "./hole";
+import { createResultView } from "./render/result-view";
 import { startWorker, workerPort } from "./worker-port";
 
-/** Seconds a Shot may run before the next is allowed, even if the ball still moves. */
-const SETTLE_TIMEOUT = 8;
 /** In auto mode, seconds a Shot may run; it ends sooner once the ball is used up or at rest. */
 const AUTO_SHOT_TIMEOUT = 3;
 
@@ -98,6 +98,7 @@ function showRubble() {
 // V switches the aiming view. Debug: G shows the Structure grids, P toggles auto mode, O frees the camera to orbit.
 window.addEventListener("keydown", (e) => {
   if (e.key === "v") director.toggleView();
+  if (e.key === "r" && round.state === "won") replay();
   if (e.key === "o") {
     cameraView.toggleOrbit();
     input.enabled = !cameraView.orbiting;
@@ -117,7 +118,11 @@ let ballType: BallType = BALL_TYPES.standard;
 let inFlight = false;
 let flightTime = 0;
 let previewPower = 0.6;
-let strokes = 0;
+const roundSettings = { ...DEFAULT_ROUND };
+/** The Target is the Hole's first Building. */
+const targetHeight = () => buildings.list[0]!.structure.height();
+let round = createRound(roundSettings, targetHeight());
+const result = createResultView(document.body, replay);
 const previous: Vec3 = [TEE[0], TEE[1] + ballType.radius, TEE[2]];
 const current: Vec3 = vec3.clone(previous);
 const velocity = vec3.create();
@@ -136,13 +141,12 @@ function resetBall() {
 }
 
 function shoot(power: number) {
-  if (inFlight || power <= 0) return;
+  if (inFlight || power <= 0 || !round.shoot()) return;
   previewPower = power;
   const velocity = launchVelocity(vec3.create(), input.aim, power * ballType.maxSpeed);
   damage.track(launchBall(world, ballType, velocity), ballType);
   inFlight = true;
   flightTime = 0;
-  strokes++;
   director.shoot();
 }
 
@@ -167,8 +171,8 @@ let autoWait = 0;
 
 function autoShoot() {
   const standing = buildings.list.filter((b) => !b.rubble && b.structure.height() >= auto.rebuildBelow);
-  if (standing.length === 0) {
-    if (!collapse.animating && collapse.moving === 0) rebuild();
+  if (standing.length === 0 || round.state === "won") {
+    if (!collapse.animating && collapse.moving === 0) replay();
     return;
   }
   const { structure } = standing[Math.floor(Math.random() * standing.length)]!;
@@ -233,11 +237,28 @@ const loop = createFixedLoop((dt) => {
     if (hitsSoon(current, velocity, BOXES, cameraFx.slowLead, ballType.drag)) slowMotion.trigger();
   }
   flightTime += dt;
+  // A ball that left the Hole is gone; nothing else waits on it.
+  if (damage.ball !== undefined && current[1] < -5) {
+    world.removeBody(damage.ball);
+    damage.track(undefined);
+  }
   // Auto mode doesn't wait for Debris and Fragments to settle, only for the ball.
   const ballDone =
     auto.enabled &&
     (damage.ball === undefined || world.isSleeping(damage.ball) || flightTime > AUTO_SHOT_TIMEOUT);
-  if (ballDone || (world.isSettled() && !collapse.animating) || flightTime > SETTLE_TIMEOUT || current[1] < -5) resetBall();
+  const { over, timedOut } = round.update(dt, world.isSettled() && !collapse.animating && !buildings.waiting);
+  if (!ballDone && !over) return;
+  if (timedOut) {
+    // Whatever still moves freezes into Rubble where it is.
+    collapse.freeze();
+    debris.freeze();
+    showRubble();
+  }
+  resetBall();
+  round.finish(targetHeight());
+  if (round.state === "won" && !auto.enabled) {
+    result.show(scoreName(round.strokes, roundSettings.par), `Target down in ${round.strokes} · Par ${roundSettings.par}`);
+  }
 });
 
 /** A cloud of dust where Cells were crushed, and along the base of a Tip. */
@@ -255,11 +276,18 @@ function collapseDust({ building, reply }: BlastOutcome) {
 
 const tuning = { cellStrength: 100, tipMargin: 0.25 };
 function rebuild() {
+  result.hide();
   if (damage.ball !== undefined) resetBall();
   debris.clear();
   collapse.clear();
   buildings.reset({ integrity: tuning.cellStrength, tipMargin: tuning.tipMargin });
   showBuildings();
+  round = createRound(roundSettings, targetHeight());
+}
+
+/** Plays the Hole again from the first Shot. */
+function replay() {
+  rebuild();
 }
 const gui = new GUI({ title: "Damage" });
 gui.add(damage.settings, "hitRadius", 0.3, 4, 0.1).name("Hit Blast radius");
@@ -276,6 +304,10 @@ collapseGui.add(collapse.settings, "hitRadius", 0.5, 4, 0.1).name("Fragment Blas
 collapseGui.add(collapse.settings, "tipSpin", 0, 2, 0.05).name("Tip spin (rad/s)");
 collapseGui.add(collapse.settings, "crushImpactKeep", 0, 1, 0.05).name("Crush speed kept per floor");
 gui.add({ rebuild }, "rebuild").name("Rebuild buildings");
+const roundGui = gui.addFolder("Hole");
+roundGui.add(roundSettings, "par", 1, 10, 1).name("Par");
+roundGui.add(roundSettings, "winBelow", 0.05, 0.9, 0.05).name("Win below (× start Height)");
+roundGui.add(roundSettings, "settleTimeout", 1, 20, 0.5).name("Settle timeout (s)");
 const autoGui = gui.addFolder("Auto mode (P)");
 autoGui.add(auto, "enabled").name("Fire automatically");
 autoGui.add(auto, "delay", 0, 5, 0.1).name("Delay between shots (s)");
@@ -346,7 +378,8 @@ rig.renderer.setAnimationLoop((now) => {
   const mean = frameTimes.reduce((a, b) => a + b, 0) / Math.max(1, frameTimes.length);
   const worst = Math.max(0, ...frameTimes);
   view.setLabel(
-    `${ballType.name} ball · Strokes ${strokes} · A/D or drag: aim · W/S: loft · hold Space: power · 1/2: ball · G: grid · V: view · O: orbit · P: auto${auto.enabled ? " (on)" : ""}\n` +
+    `Stroke ${round.strokes} · Par ${roundSettings.par} · Target ${targetHeight()} m, down below ${round.winHeight.toFixed(1)} m\n` +
+      `${ballType.name} ball · A/D or drag: aim · W/S: loft · hold Space: power · 1/2: ball · G: grid · V: view · O: orbit · P: auto${auto.enabled ? " (on)" : ""}\n` +
       `${cameraView.orbiting ? "Orbit" : director.mode}${director.mode === "AimCam" ? ` (${director.view})` : ""} · ` +
       `${fps.toFixed(0)} fps · physics + Structure ${mean.toFixed(2)} ms/frame (max ${worst.toFixed(2)}) · ` +
       `Debris ${debris.live.length}, Fragments ${collapse.moving}, Rubble ${debris.rubble.length + buildings.list.filter((b) => b.rubble).length} · worker: Structure ${structureMs.toFixed(1)} ms, Bite ${biteMs.toFixed(1)} ms`,
@@ -388,4 +421,6 @@ let pinnedPose: Pose | undefined;
     for (const el of document.querySelectorAll<HTMLElement>(".lil-gui")) el.style.display = "none";
   },
   rebuild,
+  /** The Hole so far: whether it is won, and in how many Strokes. */
+  round: () => ({ state: round.state, strokes: round.strokes, height: targetHeight() }),
 };

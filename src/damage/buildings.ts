@@ -126,6 +126,11 @@ export function createBuildings(world: PhysicsWorld, port: StructurePort, option
       port.send({ type: "blast", id: building.id, blast: id, center: vec3.clone(blast.center), radius: blast.radius, power: blast.power });
     },
 
+    /** True while a Blast's outcome is still on its way back from the worker. */
+    get waiting() {
+      return pending.size > 0;
+    },
+
     /** Applies every reply that has arrived since the last call. Run it between physics steps. */
     drain(): BlastOutcome[] {
       const outcomes: BlastOutcome[] = [];

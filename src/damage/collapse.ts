@@ -424,6 +424,23 @@ export function createCollapse(
       return pancakes.length > 0;
     },
 
+    /**
+     * Ends all collapse at once, as when a Shot times out: every Fragment
+     * becomes Rubble where it is and every Crush lands.
+     */
+    freeze() {
+      for (const fragment of fragments.splice(0)) if (world.hasBody(fragment.id)) settleFragment(fragment);
+      for (const pancake of pancakes.splice(0)) {
+        for (const floor of pancake.floors) {
+          if (floor.landed) continue;
+          floor.landed = true;
+          floor.pillars.forEach((p, i) => p && blowOut(pancake.building, i, pancake.debrisShare));
+        }
+        pancake.done = true;
+        settle(pancake);
+      }
+    },
+
     /** Removes every Fragment and Crush in progress. Rubble already at rest is a Building; `buildings.reset` removes it. */
     clear() {
       for (const f of fragments) world.removeBody(f.id);
