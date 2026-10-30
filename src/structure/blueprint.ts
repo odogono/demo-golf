@@ -29,13 +29,17 @@ export const MATERIAL_NAMES = Object.keys(MATERIALS) as MaterialName[];
 
 /**
  * The true shape of a Cell that only partly fills its cube: the part of the
- * cube inside a vertical cylinder or cone of radius `outer` (at the Cell's
- * bottom) to `outerTop` (at its top), outside one of radius `inner` to
- * `innerTop`, and between heights `bottom` and `top` (0 to 1 within the
- * Cell). Radii are around the axis through `centre` (x, z). The mesh and the
- * collider follow it; the Structure treats the Cell as a whole cube.
+ * cube inside a cylinder or cone of radius `outer` (at the Cell's bottom) to
+ * `outerTop` (at its top), outside one of radius `inner` to `innerTop`, and
+ * between `bottom` and `top` (0 to 1 within the Cell). The cylinder stands on
+ * `axis`, vertical by default; "bottom" and "top" run along it. Radii are
+ * around the line through `centre`, given in the other two axes in order:
+ * (x, z) about y, (y, z) about x, (x, y) about z. A horizontal axis curves
+ * the underside of an arch. The mesh and the collider follow it; the
+ * Structure treats the Cell as a whole cube.
  */
 export type Trim = {
+  axis?: Axis;
   centre: [number, number];
   outer: number;
   outerTop?: number;
@@ -44,6 +48,14 @@ export type Trim = {
   bottom?: number;
   top?: number;
 };
+
+export type Axis = "x" | "y" | "z";
+
+/**
+ * Which world axis plays each part of a Trim's own frame: across (the first
+ * of `centre`), along the axis, and across again (the second of `centre`).
+ */
+export const AXIS_FRAME: Record<Axis, readonly [number, number, number]> = { y: [0, 1, 2], x: [1, 0, 2], z: [0, 2, 1] };
 
 /** Points around a circle when tracing a curved edge. */
 const ARC_SEGMENTS = 64;
@@ -83,16 +95,35 @@ export function trimOutline(x: number, z: number, centre: [number, number], oute
 
 /** Points whose convex hull is a trimmed Cell's collider, relative to the Cell's centre. */
 export function trimHullPoints(x: number, y: number, z: number, trim: Trim): number[] {
-  const { centre, outer, outerTop = outer, inner = 0, innerTop = inner, bottom = 0, top = 1 } = trim;
+  const { axis = "y", centre, outer, outerTop = outer, inner = 0, innerTop = inner, bottom = 0, top = 1 } = trim;
+  const [u, a, v] = AXIS_FRAME[axis];
+  const cell = [x, y, z];
   const out: number[] = [];
+  const point = [0, 0, 0];
   for (const [h, ro, ri] of [
     [bottom, outer + (outerTop - outer) * bottom, inner + (innerTop - inner) * bottom],
     [top, outer + (outerTop - outer) * top, inner + (innerTop - inner) * top],
   ] as const) {
-    for (const [px, pz] of trimOutline(x, z, centre, ro, ri)) out.push(px - x - 0.5, h - 0.5, pz - z - 0.5);
+    for (const [pu, pv] of trimOutline(cell[u]!, cell[v]!, centre, ro, ri)) {
+      point[u] = pu - cell[u]! - 0.5;
+      point[a] = h - 0.5;
+      point[v] = pv - cell[v]! - 0.5;
+      out.push(...point);
+    }
   }
   return out;
 }
+
+/**
+ * A detail drawn on a Cell that the game otherwise ignores: no mass, no
+ * collider, no damage. It moves with its Cell and goes when the Cell does.
+ * Positions are metres from the Cell's lowest corner and may reach past it,
+ * like a lamp post standing on a deck. A box spans `min` to `max`; a cylinder
+ * stands upright on `centre` (x, z) from `bottom` to `top`.
+ */
+export type Ornament =
+  | { kind: "box"; min: [number, number, number]; max: [number, number, number]; colour: number }
+  | { kind: "cylinder"; centre: [number, number]; radius: number; bottom: number; top: number; colour: number };
 
 /** A Cell in a Blueprint. `colour` is paint only and never affects physics. */
 export type BlueprintCell = {
@@ -101,6 +132,7 @@ export type BlueprintCell = {
   mass?: number;
   /** The Cell's true shape, as the union of these pieces; a whole cube if absent. */
   trim?: Trim[];
+  ornaments?: Ornament[];
 };
 
 /** Says, for each Cell of a grid of `size`, whether it is empty or what it is made of. */

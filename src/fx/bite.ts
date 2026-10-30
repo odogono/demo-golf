@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { Brush, Evaluator, SUBTRACTION } from "three-bvh-csg";
-import { buildingMesh, cellBox, type BuildingShape, type CellMesh } from "./building-geometry";
+import { buildingMesh, cellBox, type BuildingShape, type CellMesh, type OrnamentMesh } from "./building-geometry";
 import { seeded } from "../random";
 
 /**
@@ -21,7 +21,7 @@ export type Bite = {
 };
 
 export type CsgRequest =
-  | { type: "create"; id: number; generation: number; size: [number, number, number]; alive: Uint8Array; colour: Uint32Array; cut?: Map<number, CellMesh> }
+  | { type: "create"; id: number; generation: number; size: [number, number, number]; alive: Uint8Array; colour: Uint32Array; cut?: Map<number, CellMesh>; ornaments?: Map<number, OrnamentMesh> }
   | { type: "update"; id: number; generation: number; alive: Uint8Array; bite?: Bite };
 
 export type CsgReply = {
@@ -94,7 +94,7 @@ export function createBiteCutter() {
   return {
     handle(request: CsgRequest): CsgReply | undefined {
       if (request.type === "create") {
-        shapes.set(request.id, { size: request.size, alive: request.alive, colour: request.colour, cut: new Map(request.cut), generation: request.generation });
+        shapes.set(request.id, { size: request.size, alive: request.alive, colour: request.colour, cut: new Map(request.cut), ornaments: request.ornaments, generation: request.generation });
         return undefined;
       }
       const shape = shapes.get(request.id);

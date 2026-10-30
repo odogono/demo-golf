@@ -25,7 +25,7 @@ bun run scenarios  # compare how each Blueprint is destroyed; --help for options
 | `src/input/` | Keyboard and mouse to Shot controls. |
 | `src/camera/` | Camera rigs, the director that picks between them, and shake and slow motion. |
 | `src/render/` | The Three.js scene, camera view, Shot view and Structure overlay. |
-| `src/fx/` | Building meshes, Bites (CSG, in `csg.worker.ts`), Debris, Fragments and dust. |
+| `src/fx/` | Building meshes (curved trims in `trim.ts`, Ornaments in `ornament.ts`), Bites (CSG, in `csg.worker.ts`), Debris, Fragments and dust. |
 
 Three.js appears only in `render/` and `fx/`; everything else uses `math` (pmndrs) tuples. Workers are listed in `workers.ts` and bundled separately; see `NOTES.md`.
 
