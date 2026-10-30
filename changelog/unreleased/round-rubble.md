@@ -1,6 +1,7 @@
 ---
 type: fix
 scope: game
+section: fixed
 ---
 
 A building that topples now keeps its curves once it comes to rest. A fallen
