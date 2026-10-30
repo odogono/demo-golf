@@ -2,9 +2,13 @@
 
 **Hole** — One playable level: a Tee, a Target, any number of Neighbours (possibly none), and a Par.
 
-**Tee** — The fixed spot every Shot starts from.
+**Tee** — The fixed spot the first Shot of a Hole starts from.
 
-**Shot** — One launch of the ball from the Tee. Each Shot counts as one Stroke.
+**Lie** — Where the next Shot starts from: where the last ball came to rest, or, if that ball exploded or went out of play, the spot that Shot was played from. The first Lie of a Hole is the Tee.
+
+**Ball** — A bomb shaped like a golf ball. It explodes into one Blast the first time it touches a building and is used up; anything else it lands on, it rolls over and comes to rest like a golf ball. Ball types differ in their Blast and their flight, never in whether they explode.
+
+**Shot** — One launch of the Ball from the Lie. Each Shot counts as one Stroke.
 
 **Stroke** — One unit of the player's score on a Hole, compared against Par.
 
@@ -18,9 +22,11 @@
 
 **Cell** — A 1 m cube of a Structure, with a Material, mass, Integrity and Capacity.
 
-**Material** — What a Cell is made of, such as stone, brick, timber or glass. It sets the Cell's mass, Integrity and Capacity, and the look of its Debris. One building can mix Materials.
+**Material** — What a Cell is made of, such as concrete, stone, brick or glass. It sets the Cell's mass, Integrity and Capacity, and the look of its Debris. One building can mix Materials.
 
 **Blueprint** — The layout of a building's Cells and their Materials, from which its Structure is built. Different kinds of building differ only in their Blueprint, never in how they are destroyed.
+
+**Scenario** — A repeatable test of one Blueprint: a fixed series of Blasts or Shots, each measured once the Hole is Settled, used to compare how different Blueprints are destroyed.
 
 **Integrity** — How much Blast damage a Cell can take before it is destroyed.
 
