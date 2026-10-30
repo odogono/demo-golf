@@ -72,6 +72,7 @@ function summary({ name, startHeight, steps }: ScenarioResult, repeatable: boole
     scenario: name,
     height: `${startHeight} → ${last.height} m`,
     left: last.heightLeft,
+    destroyed: `${Math.round(last.destroyed * 100)}%`,
     blast: sum((s) => s.cells.blast),
     detach: sum((s) => s.cells.detach),
     crush: sum((s) => s.cells.crush),

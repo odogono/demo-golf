@@ -21,6 +21,8 @@ export type StepResult = {
   /** The Target's Height in metres, and as a fraction of its starting Height. */
   height: number;
   heightLeft: number;
+  /** The share of the Target's original Cells no longer in its Structure, 0 to 1 (ADR 0004). */
+  destroyed: number;
   /** Cells that left any Structure, by how they left. */
   cells: { blast: number; detach: number; crush: number; tip: number };
   /** Fragments made by Detach and Tip, and Debris pieces thrown. */
@@ -55,6 +57,8 @@ export function runScenario(scenario: Scenario, seed = 1): ScenarioResult {
   const collapse = createCollapse(world, buildings, debris, { ...DEFAULT_COLLAPSE }, random);
   const target: Building = buildings.list[0]!;
   const startHeight = target.structure.height();
+  const liveCells = () => target.structure.alive.reduce((a, b) => a + b, 0);
+  const startCells = liveCells();
 
   let thrown = 0;
   const spawn = debris.spawn;
@@ -72,6 +76,7 @@ export function runScenario(scenario: Scenario, seed = 1): ScenarioResult {
       kind: "blast" in step ? "blast" : "shot",
       height: 0,
       heightLeft: 0,
+      destroyed: 0,
       cells: { blast: 0, detach: 0, crush: 0, tip: 0 },
       fragments: 0,
       debris: 0,
@@ -134,6 +139,7 @@ export function runScenario(scenario: Scenario, seed = 1): ScenarioResult {
     result.debris = thrown;
     result.height = target.structure.height();
     result.heightLeft = Math.round((result.height / startHeight) * 100) / 100;
+    result.destroyed = Math.round((1 - liveCells() / startCells) * 100) / 100;
     // Won by this Shot only if it brought the Target down; a Blast step can't win.
     const winHeight = startHeight * DEFAULT_ROUND.winBelow;
     if (!won && result.kind === "shot" && heightBefore >= winHeight && result.height < winHeight) {

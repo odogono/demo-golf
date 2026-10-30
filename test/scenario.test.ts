@@ -18,6 +18,8 @@ test("a Scenario measures each step once it Settles", () => {
   expect(steps[0]!.cells.blast).toBeGreaterThan(0);
   expect(steps[1]!.hit).toBe(true);
   expect(steps[1]!.debris).toBeGreaterThan(0);
+  expect(steps[1]!.destroyed).toBeGreaterThanOrEqual(steps[0]!.destroyed);
+  expect(steps[0]!.destroyed).toBeGreaterThan(0);
   for (const step of steps) expect(step.heightLeft).toBe(Math.round((step.height / startHeight) * 100) / 100);
 });
 
