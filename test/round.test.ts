@@ -20,7 +20,7 @@ test("a Shot ends once the scene Settles", () => {
 test("a Shot ends at the settle timeout even if bodies still move", () => {
   const round = createRound(settings, 24);
   round.shoot();
-  expect(round.update(5.9, false).over).toBe(false);
+  expect(round.update(settings.settleTimeout - 0.1, false).over).toBe(false);
   expect(round.update(0.2, false)).toEqual({ over: true, timedOut: true });
 });
 

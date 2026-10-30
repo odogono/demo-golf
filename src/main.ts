@@ -5,7 +5,7 @@ import { DEFAULT_CAMERA_FX, createShake, createSlowMotion, hitsSoon, shakeAmount
 import { DEFAULT_RIGS, type Pose } from "./camera/rigs";
 import { createBuildings, type Blast, type BlastOutcome, type StructurePort } from "./damage/buildings";
 import { createCollapse, DEFAULT_COLLAPSE } from "./damage/collapse";
-import { createDamage, DEFAULT_DAMAGE } from "./damage/damage";
+import { createDamage } from "./damage/damage";
 import { createDebris } from "./damage/debris";
 import type { CsgReply, CsgRequest } from "./fx/bite";
 import { createBuildingViews } from "./fx/building-view";
@@ -23,7 +23,7 @@ import { launchVelocity } from "./shot/aim";
 import { autoAim } from "./shot/auto-aim";
 import { BALL_TYPES, type BallType } from "./shot/ball-types";
 import { createPowerMeter } from "./shot/power-meter";
-import { TEE, launchBall } from "./shot/shot";
+import { TEE, createRestCheck, launchBall } from "./shot/shot";
 import { predictTrajectory } from "./shot/trajectory";
 import { DEFAULT_ROUND, createRound, scoreName } from "./game/round";
 import { BUILDINGS } from "./hole";
@@ -63,7 +63,7 @@ const debris = createDebris(world, {
   cap: 150,
   otherBodies: () => (damage.ball === undefined ? 0 : 1) + collapse.moving,
 });
-const damage = createDamage(world, buildings, debris, { ...DEFAULT_DAMAGE });
+const damage = createDamage(world, buildings, debris);
 const collapse = createCollapse(world, buildings, debris, { ...DEFAULT_COLLAPSE });
 
 const buildingViews = createBuildingViews(rig.scene, workerPort<CsgRequest, CsgReply>(startWorker("csg")));
@@ -123,7 +123,12 @@ const roundSettings = { ...DEFAULT_ROUND };
 const targetHeight = () => buildings.list[0]!.structure.height();
 let round = createRound(roundSettings, targetHeight());
 const result = createResultView(document.body, replay);
-const previous: Vec3 = [TEE[0], TEE[1] + ballType.radius, TEE[2]];
+/** Where the next Shot starts, on the ground: the Tee, then wherever the last ball came to rest (ADR 0003). */
+const lie: Vec3 = vec3.clone(TEE);
+const rest = createRestCheck();
+/** The ball in play has come to rest; it stays drawn at the next Lie until the Shot ends. */
+let atRest = false;
+const previous: Vec3 = [lie[0], lie[1] + ballType.radius, lie[2]];
 const current: Vec3 = vec3.clone(previous);
 const velocity = vec3.create();
 const shown = vec3.create();
@@ -132,7 +137,7 @@ function resetBall() {
   if (damage.ball !== undefined) world.removeBody(damage.ball);
   damage.track(undefined);
   inFlight = false;
-  vec3.set(current, TEE[0], TEE[1] + ballType.radius, TEE[2]);
+  vec3.set(current, lie[0], lie[1] + ballType.radius, lie[2]);
   vec3.copy(previous, current);
   view.setBallType(ballType);
   view.setBallVisible(true);
@@ -144,9 +149,11 @@ function shoot(power: number) {
   if (inFlight || power <= 0 || !round.shoot()) return;
   previewPower = power;
   const velocity = launchVelocity(vec3.create(), input.aim, power * ballType.maxSpeed);
-  damage.track(launchBall(world, ballType, velocity), ballType);
+  damage.track(launchBall(world, ballType, velocity, lie), ballType);
   inFlight = true;
   flightTime = 0;
+  rest.reset();
+  atRest = false;
   director.shoot();
 }
 
@@ -209,7 +216,7 @@ const loop = createFixedLoop((dt) => {
 
   input.update(dt);
   world.step(dt);
-  for (const { blast } of [...damage.update(dt), ...collapse.update(dt)]) {
+  for (const { blast } of [...damage.update(), ...collapse.update(dt)]) {
     const big = blast.radius > 2;
     dust.puff(blast.center, blast.outward, big ? 80 : 24, big ? 2.5 : 1);
     const distance = rig.camera.position.distanceTo({ x: blast.center[0], y: blast.center[1], z: blast.center[2] });
@@ -230,14 +237,21 @@ const loop = createFixedLoop((dt) => {
     }
     return;
   }
-  if (damage.ball === undefined) view.setBallVisible(false);
+  if (damage.ball === undefined) view.setBallVisible(atRest);
   else {
     vec3.copy(current, world.getPosition(damage.ball));
     vec3.copy(velocity, world.getLinearVelocity(damage.ball));
     if (hitsSoon(current, velocity, BOXES, cameraFx.slowLead, ballType.drag)) slowMotion.trigger();
+    // A ball at rest is the next Lie (ADR 0003). Auto mode always shoots from the Tee.
+    if (rest.update(vec3.length(velocity), dt)) {
+      if (!auto.enabled) vec3.set(lie, current[0], current[1] - ballType.radius, current[2]);
+      world.removeBody(damage.ball);
+      damage.track(undefined);
+      atRest = true;
+    }
   }
   flightTime += dt;
-  // A ball that left the Hole is gone; nothing else waits on it.
+  // A ball that left the Hole is out of play; nothing else waits on it.
   if (damage.ball !== undefined && current[1] < -5) {
     world.removeBody(damage.ball);
     damage.track(undefined);
@@ -254,6 +268,8 @@ const loop = createFixedLoop((dt) => {
     debris.freeze();
     showRubble();
   }
+  // A ball that exploded, left the Hole or was still rolling at the timeout
+  // leaves the Lie where it was: the next Shot goes from the same spot.
   resetBall();
   round.finish(targetHeight());
   if (round.state === "won" && !auto.enabled) {
@@ -277,7 +293,8 @@ function collapseDust({ building, reply }: BlastOutcome) {
 const tuning = { cellStrength: 100, tipMargin: 0.25 };
 function rebuild() {
   result.hide();
-  if (damage.ball !== undefined) resetBall();
+  vec3.copy(lie, TEE);
+  resetBall();
   debris.clear();
   collapse.clear();
   buildings.reset({ integrity: tuning.cellStrength, tipMargin: tuning.tipMargin });
@@ -290,10 +307,10 @@ function replay() {
   rebuild();
 }
 const gui = new GUI({ title: "Damage" });
-gui.add(damage.settings, "hitRadius", 0.3, 4, 0.1).name("Hit Blast radius");
-gui.add(damage.settings, "powerPerImpulse", 0, 10, 0.1).name("Hit power / impulse");
-gui.add(damage.settings, "explosiveRadius", 0.5, 8, 0.1).name("Explosive radius");
-gui.add(damage.settings, "explosivePower", 0, 600, 10).name("Explosive power");
+gui.add(BALL_TYPES.standard.blast, "radius", 0.3, 8, 0.1).name("Standard Blast radius");
+gui.add(BALL_TYPES.standard.blast, "power", 0, 600, 10).name("Standard Blast power");
+gui.add(BALL_TYPES.explosive.blast, "radius", 0.3, 8, 0.1).name("Explosive Blast radius");
+gui.add(BALL_TYPES.explosive.blast, "power", 0, 600, 10).name("Explosive Blast power");
 gui.add(tuning, "cellStrength", 10, 500, 10).name("Cell strength").onFinishChange(rebuild);
 gui.add(tuning, "tipMargin", 0, 3, 0.05).name("Tipping margin (m)").onFinishChange(rebuild);
 gui.add(debris, "cap", 10, 400, 10).name("Body cap");
@@ -386,7 +403,7 @@ rig.renderer.setAnimationLoop((now) => {
   );
 
   const pose = director.update(Math.min(elapsed, 0.1), {
-    tee: TEE,
+    tee: lie,
     yaw: input.aim.yaw,
     ball: inFlight ? shown : undefined,
     velocity: inFlight ? velocity : undefined,

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Vec3 } from "math";
 import { createBuildings, inlineStructures } from "../src/damage/buildings";
-import { createDamage, DEFAULT_DAMAGE } from "../src/damage/damage";
+import { createDamage } from "../src/damage/damage";
 import { createDebris } from "../src/damage/debris";
 import { createCrashcatWorld } from "../src/physics/crashcat";
 import { launchVelocity } from "../src/shot/aim";
@@ -29,14 +29,14 @@ describe("autoAim", () => {
       { origin: [8, 0, -12], size: [6, 12, 6] },
     ]);
     const debris = createDebris(world, { cap: 150 });
-    const damage = createDamage(world, buildings, debris, { ...DEFAULT_DAMAGE });
+    const damage = createDamage(world, buildings, debris);
     const { aim, power } = autoAim(FROM, [10.5, 4.5, -6.5], BALL_TYPES.standard);
     const ball = launchBall(world, BALL_TYPES.standard, launchVelocity([0, 0, 0], aim, power * BALL_TYPES.standard.maxSpeed));
     damage.track(ball, BALL_TYPES.standard);
     const hits = [];
     for (let n = 0; n < 240 && hits.length === 0; n++) {
       world.step(DT);
-      hits.push(...damage.update(DT));
+      hits.push(...damage.update());
     }
     expect(hits[0]?.buildings).toEqual([buildings.list[1]!]);
   });

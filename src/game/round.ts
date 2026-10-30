@@ -7,7 +7,7 @@ export type RoundSettings = {
   settleTimeout: number;
 };
 
-export const DEFAULT_ROUND: RoundSettings = { par: 5, winBelow: 0.3, settleTimeout: 6 };
+export const DEFAULT_ROUND: RoundSettings = { par: 5, winBelow: 0.3, settleTimeout: 10 };
 
 export type RoundState = "aiming" | "shot" | "won";
 

@@ -1,11 +1,11 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import type { Vec3 } from "math";
 import { STEP } from "../src/loop";
 import { createCrashcatWorld } from "../src/physics/crashcat";
 import { BALL_TYPES } from "../src/shot/ball-types";
 import { MAX_LOFT, clampAim, launchVelocity } from "../src/shot/aim";
 import { createPowerMeter } from "../src/shot/power-meter";
-import { launchBall } from "../src/shot/shot";
+import { createRestCheck, launchBall, REST_TIME } from "../src/shot/shot";
 import { predictTrajectory } from "../src/shot/trajectory";
 
 test("aim straight ahead launches down -z", () => {
@@ -75,3 +75,15 @@ for (const type of Object.values(BALL_TYPES)) {
     expect(world.getPosition(ball)[2]).toBeGreaterThan(-6);
   });
 }
+
+describe("rest check", () => {
+  test("a ball is at rest once it stays slow, but not at the top of a lob", () => {
+    const rest = createRestCheck();
+    // Slow for a moment at the top of a lob, then falling again.
+    for (let n = 0; n < 10; n++) expect(rest.update(0.1, 1 / 60)).toBe(false);
+    expect(rest.update(5, 1 / 60)).toBe(false);
+    let steps = 0;
+    while (!rest.update(0.1, 1 / 60)) steps++;
+    expect((steps + 1) / 60).toBeCloseTo(REST_TIME, 1);
+  });
+});
