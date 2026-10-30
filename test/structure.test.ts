@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { MATERIAL_NAMES, MATERIALS } from "../src/structure/blueprint";
+import { splitFoundation } from "../src/structure/foundation";
 import { createStructure } from "../src/structure/structure";
 
 const target = () => createStructure({ size: [8, 20, 8] });
@@ -321,5 +322,20 @@ describe("Reach (ADR 0005)", () => {
     s.applyBlast([3.5, 1.5, 0.5], 0.1, 1e6);
     // x 0 to 2 still stand on the left leg; x 4 to 7 are more than 7 from the right one.
     expect(detached(s)).toEqual([4, 5, 6, 7]);
+  });
+});
+
+describe("a whole-layer Crush (#57)", () => {
+  test("pancakes what was above it, with the layer's own leftovers, rather than Detaching it", () => {
+    // The bridge as it stands on its Foundation.
+    const s = createStructure(splitFoundation({ size: [24, 10, 7], blueprint: "arch-bridge" }).options);
+    // Explosive-ball Blasts on the front of the deck, on alternating sides of the crown.
+    s.applyBlast([7, 6, 0.5], 3, 150);
+    s.evaluate();
+    s.applyBlast([16, 6, 0.5], 3, 150);
+    const events = s.evaluate();
+    const crush = events.find((e) => e.kind === "crush" && e.falling.length > 0);
+    expect(crush).toBeDefined();
+    expect(events.some((e) => e.kind === "detach" && e.cells.length > 20)).toBe(false);
   });
 });
