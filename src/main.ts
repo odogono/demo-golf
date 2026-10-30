@@ -79,7 +79,7 @@ let overlays: ReturnType<typeof createStructureOverlay>[] = [];
 let showGrid = false;
 
 function showBuildings() {
-  buildingViews.reset(buildings.list);
+  buildingViews.reset(buildings.list, buildings.foundations);
   for (const overlay of overlays) rig.scene.remove(overlay.mesh);
   overlays = buildings.list.map((b) => createStructureOverlay(b.structure));
   for (const overlay of overlays) {
@@ -297,7 +297,8 @@ function collapseDust({ building, reply }: BlastOutcome) {
   }
 }
 
-const tuning = { cellStrength: 100, tipMargin: 0.25 };
+// Starts from the Target's own tipMargin, so rebuilding doesn't lose it.
+const tuning = { cellStrength: 100, tipMargin: HOLE_BUILDINGS[0]?.tipMargin ?? 0.25 };
 function rebuild() {
   result.hide();
   vec3.copy(lie, TEE);

@@ -98,6 +98,8 @@ export function createStructure(options: StructureOptions) {
   const trims = new Map<number, Trim[]>();
   /** Details drawn on Cells, which nothing but the renderer sees (ADR 0002). */
   const ornaments = new Map<number, Ornament[]>();
+  /** Cells the Blueprint marks as Foundation, which `splitFoundation` takes away. */
+  const foundation = new Set<number>();
   const baseCapacity = new Float32Array(count);
   const layerDamaged = new Uint8Array(ny);
 
@@ -134,6 +136,7 @@ export function createStructure(options: StructureOptions) {
           colour[i] = cell.colour;
           if (cell.trim) trims.set(i, cell.trim);
           if (cell.ornaments) ornaments.set(i, cell.ornaments);
+          if (cell.foundation) foundation.add(i);
           mass[i] = cell.mass ?? m.mass;
           maxIntegrity[i] = fullIntegrity * m.toughness;
           integrity[i] = maxIntegrity[i]!;
@@ -367,6 +370,7 @@ export function createStructure(options: StructureOptions) {
     colour,
     trims,
     ornaments,
+    foundation,
     fullIntegrity,
     index,
     coords,

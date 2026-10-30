@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { BlastOutcome, Building } from "../damage/buildings";
+import type { Foundation } from "../structure/foundation";
 import type { Port } from "../worker-port";
 import type { CsgReply, CsgRequest } from "./bite";
 import { buildingGeometry, createBuildingMaterials } from "./block-material";
@@ -20,6 +21,8 @@ const FULL_BITE_POWER = 150;
 export function createBuildingViews(scene: THREE.Scene, port: Port<CsgRequest, CsgReply>) {
   const material = createBuildingMaterials();
   const meshes: THREE.Mesh[] = [];
+  /** Foundations never change, so each is drawn once per `reset`. */
+  const fixed: THREE.Mesh[] = [];
   const arrived: CsgReply[] = [];
   let generation = 0;
   let seed = 1;
@@ -46,15 +49,23 @@ export function createBuildingViews(scene: THREE.Scene, port: Port<CsgRequest, C
     /** Draws a Building added since the last `reset`, such as Rubble at rest. */
     add,
 
-    /** Draws `buildings` undamaged, replacing any earlier ones. */
-    reset(buildings: readonly Building[]) {
+    /** Draws `buildings` undamaged, and the `foundations` they stand on, replacing any earlier ones. */
+    reset(buildings: readonly Building[], foundations: readonly Foundation[] = []) {
       generation++;
       arrived.length = 0;
-      for (const mesh of meshes.splice(0)) {
+      for (const mesh of [...meshes.splice(0), ...fixed.splice(0)]) {
         scene.remove(mesh);
         mesh.geometry.dispose();
       }
       for (const building of buildings) add(building);
+      for (const { structure } of foundations) {
+        const mesh = new THREE.Mesh(new THREE.BufferGeometry(), material);
+        setGeometry(mesh, buildingMesh({ size: structure.size, colour: structure.colour, alive: structure.alive, cut: trimmedCells(structure), ornaments: ornamentedCells(structure), clear: clearCells(structure) }));
+        mesh.position.set(...structure.origin);
+        mesh.receiveShadow = true;
+        scene.add(mesh);
+        fixed.push(mesh);
+      }
     },
 
     /** Sends a Blast's outcome to be cut, if it changed the grid. */

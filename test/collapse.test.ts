@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import type { Vec3 } from "math";
 import { createBuildings, inlineStructures } from "../src/damage/buildings";
 import { quat, vec3 } from "math";
-import { createCollapse, DEFAULT_COLLAPSE, floorFall, nearestUpright } from "../src/damage/collapse";
+import { applyTurn, createCollapse, DEFAULT_COLLAPSE, floorFall, nearestUpright, turnTrim, type Turn } from "../src/damage/collapse";
+import { trimHullPoints, type Trim } from "../src/structure/blueprint";
 import type { Hit } from "../src/damage/damage";
 import { createDebris } from "../src/damage/debris";
 import { createCrashcatWorld } from "../src/physics/crashcat";
@@ -210,5 +211,54 @@ describe("nearestUpright", () => {
     expect(x).toEqual([0, 1, 0]);
     expect(y).toEqual([-1, 0, 0]);
     expect(vec3.cross(vec3.create(), x, y)).toEqual(z);
+  });
+});
+
+describe("Rubble from a turned piece", () => {
+  // A quarter turn about z: x goes to y, y to -x.
+  const onItsSide: Turn = [
+    [0, 1, 0],
+    [-1, 0, 0],
+    [0, 0, 1],
+  ];
+
+  test("turns its trims with it, so their hulls are the old hulls turned", () => {
+    // Each trim with the centre of a Cell it reaches.
+    const trims: [Trim, Vec3][] = [
+      [{ centre: [4.5, 4.5], outer: 3.6, outerTop: 3.4, inner: 2.8, bottom: 0.2 }, [1.5, 6.5, 4.5]],
+      [{ axis: "z", centre: [12, 1], outer: 7.3, inner: 6.5 }, [6.5, 4.5, 3.5]],
+      [{ axis: "x", centre: [3.5, 0.5], outer: 0.48 }, [8.5, 3.5, 0.5]],
+    ];
+    const to: Vec3 = [5.5, 1.5, 7.5];
+    for (const [trim, from] of trims) {
+      const turned = turnTrim(trim, { turn: onItsSide, from, to });
+      const before = trimHullPoints(from[0] - 0.5, from[1] - 0.5, from[2] - 0.5, trim);
+      const after = trimHullPoints(to[0] - 0.5, to[1] - 0.5, to[2] - 0.5, turned);
+      const key = (p: number[]) => p.map((v) => v.toFixed(3)).join(",");
+      const expected = new Set<string>();
+      for (let k = 0; k < before.length; k += 3) expected.add(key(applyTurn(onItsSide, [before[k]!, before[k + 1]!, before[k + 2]!]).map((v) => v + 0)));
+      const got = new Set<string>();
+      for (let k = 0; k < after.length; k += 3) got.add(key([after[k]!, after[k + 1]!, after[k + 2]!].map((v) => v + 0)));
+      // The same shape: every turned hull point is on the new hull's outline, and vice versa.
+      expect(got.size).toBeGreaterThan(0);
+      for (const p of got) expect(expected.has(p.replace(/-0\.000/g, "0.000"))).toBe(true);
+    }
+  });
+
+  test("a toppled lighthouse keeps its round shape as Rubble", () => {
+    const world = createCrashcatWorld();
+    world.addBody({ shape: { kind: "box", halfExtents: [100, 0.5, 100] }, motion: "static", position: [0, -0.5, 0] });
+    const buildings = createBuildings(world, inlineStructures(), [{ origin: [-4.5, 0, -14.5], size: [9, 24, 9], blueprint: "lighthouse", tipMargin: 2 }]);
+    const debris = createDebris(world, { cap: 150 });
+    const collapse = createCollapse(world, buildings, debris, { ...DEFAULT_COLLAPSE });
+    const env = { world, buildings, debris, collapse, target: buildings.list[0]!, neighbour: buildings.list[0]! };
+    blastTarget(env, [0, 2.5, -7.5], 3, 150);
+    expect(collapse.fragments).toHaveLength(1);
+    run(env, 12);
+    const rubble = buildings.drainAdded().find((b) => b.structure.trims.size > 50);
+    expect(rubble).toBeDefined();
+    // Lying down, its round pieces now curve about a horizontal axis.
+    const axes = new Set([...rubble!.structure.trims.values()].flat().map((t) => t.axis ?? "y"));
+    expect(axes.has("x") || axes.has("z")).toBe(true);
   });
 });

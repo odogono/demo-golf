@@ -1,6 +1,7 @@
 import { vec3, type Vec3 } from "math";
 import type { BodyId, PhysicsWorld } from "../physics/PhysicsWorld";
 import { structureColliders } from "../structure/colliders";
+import { splitFoundation, type Foundation } from "../structure/foundation";
 import { createStructure, type Structure, type StructureOptions } from "../structure/structure";
 import { createStructureHost, type StructureReply, type StructureRequest } from "../structure/structure-host";
 import { inlinePort, type Port } from "../worker-port";
@@ -44,6 +45,8 @@ export type BlastOutcome = { building: Building; blast: Blast; reply: StructureR
  */
 export function createBuildings(world: PhysicsWorld, port: StructurePort, options: StructureOptions[]) {
   const buildings: Building[] = [];
+  /** The fixed plinths under the Hole's Buildings, with their static bodies. */
+  const foundations: (Foundation & { body: BodyId | undefined })[] = [];
   const pending = new Map<number, Blast>();
   const arrived: StructureReply[] = [];
   const added: Building[] = [];
@@ -74,16 +77,30 @@ export function createBuildings(world: PhysicsWorld, port: StructurePort, option
 
   function create(overrides: Partial<StructureOptions> = {}) {
     for (const building of buildings) if (building.body !== undefined) world.removeBody(building.body);
+    for (const { body } of foundations) if (body !== undefined) world.removeBody(body);
     buildings.length = 0;
+    foundations.length = 0;
     pending.clear();
     arrived.length = 0;
     added.length = 0;
-    for (const o of options) add({ ...o, ...overrides }, false);
+    for (const o of options) {
+      const split = splitFoundation({ ...o, ...overrides });
+      if (split.foundation) {
+        const { structure } = split.foundation;
+        const children = structureColliders(structure);
+        const body = children.length === 0 ? undefined : world.addBody({ shape: { kind: "compound", children }, motion: "static", position: structure.origin });
+        foundations.push({ ...split.foundation, body });
+      }
+      add(split.options, false);
+    }
   }
   create();
 
   return {
     list: buildings as readonly Building[],
+
+    /** The Foundations under the Buildings: drawn and collided, but never Buildings themselves. */
+    foundations: foundations as readonly Foundation[],
 
     /** Rebuilds every Building undamaged, optionally with new Structure options such as Cell Integrity. */
     reset: create,
