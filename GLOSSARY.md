@@ -36,7 +36,7 @@
 
 **Capacity** — How much mass above it a Cell can carry before it is crushed. It falls as Integrity falls.
 
-**Support** — A Cell resting on a Cell that carries load down to the ground. Load on a Cell goes to its nearest Support.
+**Support** — A Cell resting on a Cell that carries load down to the ground.
 
 **Reach** — How far a Cell can be from Support, through its own layer, and still hold itself up. It is set by the Cell's Material.
 
