@@ -138,7 +138,7 @@ export type BlueprintCell = {
 /** Says, for each Cell of a grid of `size`, whether it is empty or what it is made of. */
 export type Blueprint = (x: number, y: number, z: number) => BlueprintCell | undefined;
 
-export type BlueprintName = "frame" | "lighthouse" | "car-park" | "glass-office";
+export type BlueprintName = "frame" | "lighthouse" | "car-park" | "glass-office" | "arch-bridge";
 
 export type FrameOptions = {
   size: readonly [number, number, number];
@@ -496,9 +496,107 @@ export function glassOfficeBlueprint({ size: [nx, ny, nz], floorHeight }: FrameO
   };
 }
 
+const ROAD = 0x7d7a78;
+const LAMP = 0x2f4fa8;
+const LAMP_GLOW = 0xfff2b0;
+
+/**
+ * A stone road bridge, long along x. One smooth semicircular arch spans the
+ * middle under a flat road deck, with cream spandrels between them and low
+ * cream parapets, rounded on top, along both sides. Round cream pillars on
+ * stone footings stand at each end of the deck, and sloping coral abutments
+ * run from them down to the ground. Blue lamp posts (Ornaments) stand on the
+ * pillars and along the parapets. The arch and abutments curve about the z
+ * axis and the parapets' coping about x (ADR 0002). The span is brick, the
+ * weakest Material, so that Blasts on both sides of the arch can cut right
+ * across it and drop the middle; the pillars and footings are stone. It needs
+ * `size` about 24 × 10 × 7.
+ */
+export function archBridgeBlueprint({ size: [nx, ny, nz] }: FrameOptions): Blueprint {
+  const deck = ny - 2;
+  const end = 3;
+  const springing = 1;
+  const intrados = (nx - 2 * end) / 2 - 2.5;
+  const arch: [number, number] = [nx / 2, springing];
+  // Each abutment slopes from the ground at the grid's end to the deck's top by the pillar.
+  const lean = 4;
+  const slope = (end * end + deck * deck + 2 * deck * lean) / (2 * end);
+  const abutments: [number, number][] = [
+    [slope, -lean],
+    [nx - slope, -lean],
+  ];
+  const slopeRadius = Math.hypot(slope, lean);
+
+  /** The nearest and farthest the face of Cell (x, y) comes to the z-axis line through `at`. */
+  const side = (x: number, y: number, at: [number, number]) => reach(x, y, at);
+
+  const lamp = (cx: number, cz: number, base: number): Ornament[] => [
+    { kind: "cylinder", centre: [cx, cz], radius: 0.07, bottom: base, top: base + 2.2, colour: LAMP },
+    { kind: "box", min: [cx - 0.16, base + 2.2, cz - 0.16], max: [cx + 0.16, base + 2.6, cz + 0.16], colour: LAMP_GLOW },
+    { kind: "cylinder", centre: [cx, cz], radius: 0.22, bottom: base + 2.6, top: base + 2.72, colour: LAMP },
+  ];
+  const pillarX = [end, nx - end - 1];
+  const lampX = [Math.round(nx / 2 - intrados / 2), Math.round(nx / 2 + intrados / 2) - 1];
+
+  return (x, y, z) => {
+    const edge = z === 0 || z === nz - 1;
+    // The pillars: round, on stone footings, a little above the parapets.
+    if (pillarX.includes(x) && edge) {
+      if (y === 0) return { material: "stone", colour: STONE };
+      if (y > deck + 1) return undefined;
+      const top = y === deck + 1;
+      return {
+        material: "stone",
+        colour: WHITE,
+        // Just inside the Cell: a cylinder touching all four sides trips up the CSG that cuts it.
+        trim: [{ centre: [x + 0.5, z + 0.5], outer: 0.48, ...(top ? { top: 0.6 } : {}) }],
+        ornaments: top ? lamp(0.5, 0.5, 0.6) : undefined,
+      };
+    }
+    // Beyond the pillars, the abutments slope to the ground.
+    if (x < end || x > nx - end - 1) {
+      if (y > deck) return undefined;
+      const at = abutments[x < end ? 0 : 1]!;
+      const { near, far } = side(x, y, at);
+      if (near >= slopeRadius - SLIVER) return undefined;
+      return {
+        material: "brick",
+        colour: y === 0 ? STONE : CORAL,
+        trim: far <= slopeRadius ? undefined : [{ axis: "z", centre: at, outer: slopeRadius }],
+      };
+    }
+    // Parapets along both sides of the road, their coping rounded about x.
+    if (y === deck + 1) {
+      if (!edge) return undefined;
+      return {
+        material: "brick",
+        colour: WHITE,
+        trim: [{ axis: "x", centre: [y + 0.5, z + 0.5], outer: 0.48 }],
+        ornaments: lampX.includes(x) ? lamp(0.5, 0.5, 0.95) : undefined,
+      };
+    }
+    if (y === deck) return { material: "brick", colour: edge ? WHITE : ROAD };
+    if (y > deck) return undefined;
+    // The arch ring, and the spandrels filling up to the deck.
+    const { near, far } = side(x, y, arch);
+    if (far <= intrados + SLIVER && y >= springing) return undefined;
+    if (y < springing) {
+      if (near < intrados - SLIVER && x > end && x < nx - end - 1) return undefined;
+      return { material: "stone", colour: STONE };
+    }
+    // Painted one colour, since a Cell can't follow the ring's curve with two.
+    return {
+      material: "brick",
+      colour: WHITE,
+      trim: near >= intrados ? undefined : [{ axis: "z", centre: arch, outer: Math.max(nx, ny) * 2, inner: intrados }],
+    };
+  };
+}
+
 export const BLUEPRINTS: Record<BlueprintName, (options: FrameOptions) => Blueprint> = {
   frame: frameBlueprint,
   lighthouse: lighthouseBlueprint,
   "car-park": carParkBlueprint,
   "glass-office": glassOfficeBlueprint,
+  "arch-bridge": archBridgeBlueprint,
 };
