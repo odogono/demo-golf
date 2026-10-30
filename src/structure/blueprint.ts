@@ -518,9 +518,10 @@ const LAMP_GLOW = 0xfff2b0;
  * run from them down to the ground. Blue lamp posts (Ornaments) stand on the
  * pillars and along the parapets. The arch and abutments curve about the z
  * axis and the parapets' coping about x (ADR 0002). The span is brick, the
- * weakest Material, so that Blasts on both sides of the arch can cut right
- * across it and drop the middle; the pillars and footings are stone. It needs
- * `size` about 24 × 10 × 7.
+ * weakest Material, so that a low hit near a quarter point Crushes the deck
+ * down onto the arch, which stays standing; the pillars and footings are
+ * stone. It needs `size` about 24 × 10 × 5: narrow enough for an explosive
+ * ball's Blast to reach across it (#59).
  */
 export function archBridgeBlueprint({ size: [nx, ny, nz] }: FrameOptions): Blueprint {
   const deck = ny - 2;
