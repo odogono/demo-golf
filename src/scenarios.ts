@@ -56,12 +56,13 @@ export const SCENARIOS: Scenario[] = [
   },
   {
     name: "arch-bridge",
-    building: { origin: [-12, 0, -16], size: [24, 10, 7], blueprint: "arch-bridge" },
+    building: { origin: [-12, 0, -15], size: [24, 10, 5], blueprint: "arch-bridge" },
     steps: [
-      // Shots alone, on alternating sides of the crown.
-      { shot: { from: [-5, 0, 4], at: [-5, 6.5, -9], ball: "explosive" } },
-      { shot: { from: [5, 0, 4], at: [4, 6.5, -9], ball: "explosive" } },
-      { shot: { from: [0, 0, 4], at: [0, 6.5, -9], ball: "explosive" } },
+      // A standard ball only bites the span.
+      { shot: { from: [4, 0, 4], at: [4, 6.5, -10], ball: "standard" } },
+      // An explosive one low near a quarter point brings the deck down onto the arch.
+      { shot: { from: [-5, 0, 4], at: [-5, 4.5, -10], ball: "explosive" } },
+      { shot: { from: [5, 0, 4], at: [5, 6, -10], ball: "explosive" } },
     ],
   },
   {
