@@ -8,19 +8,21 @@ import { trimHullPoints, type Trim } from "../src/structure/blueprint";
 import type { Hit } from "../src/damage/damage";
 import { createDebris } from "../src/damage/debris";
 import { createCrashcatWorld } from "../src/physics/crashcat";
+import { seeded } from "../src/random";
 
 const DT = 1 / 60;
 
-/** The Hole in `main.ts`: the Target, and a Neighbour 4 m off its +x side. */
-function setup() {
+/** The Hole in `main.ts`: the Target, and a Neighbour 4 m off its +x side. Seeded, so Debris lands the same each run. */
+function setup(seed = 1) {
+  const random = seeded(seed);
   const world = createCrashcatWorld();
   world.addBody({ shape: { kind: "box", halfExtents: [100, 0.5, 100] }, motion: "static", position: [0, -0.5, 0] });
   const buildings = createBuildings(world, inlineStructures(), [
     { origin: [-4, 0, -14], size: [8, 20, 8] },
     { origin: [8, 0, -12], size: [6, 12, 6] },
   ]);
-  const debris = createDebris(world, { cap: 150 });
-  const collapse = createCollapse(world, buildings, debris, { ...DEFAULT_COLLAPSE });
+  const debris = createDebris(world, { cap: 150, random });
+  const collapse = createCollapse(world, buildings, debris, { ...DEFAULT_COLLAPSE }, random);
   const [target, neighbour] = buildings.list as [(typeof buildings.list)[0], (typeof buildings.list)[0]];
   return { world, buildings, debris, collapse, target, neighbour };
 }
