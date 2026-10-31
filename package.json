@@ -14,7 +14,8 @@
     "typecheck": "tsc",
     "bench": "bun bench/damage.ts",
     "scenarios": "bun bench/scenarios.ts",
-    "shoot": "bun tools/shoot.ts"
+    "shoot": "bun tools/shoot.ts",
+    "profile": "bun tools/profile.ts"
   },
   "devDependencies": {
     "@types/bun": "^1.3.0",

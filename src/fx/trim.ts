@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { Brush, Evaluator, INTERSECTION, SUBTRACTION } from "three-bvh-csg";
 import { AXIS_FRAME, MATERIAL_NAMES, type Trim } from "../structure/blueprint";
+import { lineageOf, type Lineage } from "../structure/lineage";
 import type { Structure } from "../structure/structure";
 import { toGeometry } from "./bite";
 import { cellBox, type CellMesh } from "./building-geometry";
@@ -125,7 +126,16 @@ export function trimmedCells(structure: Structure): Map<number, CellMesh> {
   let cells = cache.get(structure);
   if (cells) return cells;
   cells = new Map();
+  const lineage = lineageOf(structure);
+  const inherited = lineage && trimmedCells(lineage.source);
   for (const [i, t] of structure.trims) {
+    // Rubble turns its source Cell's mesh rather than cutting it again.
+    const was = lineage?.cells.get(i);
+    const from = was === undefined ? undefined : inherited!.get(was);
+    if (from) {
+      cells.set(i, turned(from, lineage!, was!, structure.coords(i)));
+      continue;
+    }
     const [x, y, z] = structure.coords(i);
     const key = `${x},${y},${z},${JSON.stringify(t)}`;
     let mesh = shapes.get(key);
@@ -134,6 +144,28 @@ export function trimmedCells(structure: Structure): Map<number, CellMesh> {
   }
   cache.set(structure, cells);
   return cells;
+}
+
+/**
+ * A source Cell's mesh, turned about its centre and moved to the Cell at
+ * `to`. A turn is a rotation, so the triangles keep their winding.
+ */
+function turned(mesh: CellMesh, { source, turn }: Lineage, was: number, to: [number, number, number]): CellMesh {
+  const at = source.coords(was);
+  const out = { position: new Float32Array(mesh.position.length), normal: new Float32Array(mesh.normal.length) };
+  for (let p = 0; p < mesh.position.length; p += 3) {
+    for (let k = 0; k < 3; k++) {
+      let position = to[k]! + 0.5;
+      let normal = 0;
+      for (let j = 0; j < 3; j++) {
+        position += turn[j]![k]! * (mesh.position[p + j]! - at[j]! - 0.5);
+        normal += turn[j]![k]! * mesh.normal[p + j]!;
+      }
+      out.position[p + k] = position;
+      out.normal[p + k] = normal;
+    }
+  }
+  return out;
 }
 
 const GLASS = MATERIAL_NAMES.indexOf("glass");

@@ -1,5 +1,6 @@
 import { quat, vec3, type Mat3, type Quat, type Vec3 } from "math";
 import type { BodyId, CompoundChild, ContactEvent, PhysicsWorld } from "../physics/PhysicsWorld";
+import { inherit } from "../structure/lineage";
 import { cellHulls, structureColliders, type CellHulls } from "../structure/colliders";
 import { AXIS_FRAME, type Ornament, type Trim } from "../structure/blueprint";
 import type { StructureEvent } from "../structure/structure";
@@ -215,10 +216,12 @@ export function createCollapse(
     // Hulls turn as one with the Cell, so the source's, rotated, collide the same.
     const rotation = turnRotation(turn);
     const hulls = new Map<number, CellHulls>();
+    const from = new Map<number, number>();
     cells.forEach((cell, n) => {
       const [x, y, z] = at[n]!;
       const i = x + size[0] * (z + size[2] * y);
       grid.alive[i] = 1;
+      from.set(i, cell);
       grid.mass[i] = structure.mass[cell]!;
       // The Structure zeroes a Cell's Integrity when it leaves, so Rubble starts whole.
       grid.integrity[i] = structure.maxIntegrity[cell]!;
@@ -236,7 +239,8 @@ export function createCollapse(
       if (ornaments) grid.ornaments.set(i, ornaments.map((o) => turnOrnament(o, turn)));
     });
     if (min[1] < 0.5) min[1] = 0;
-    buildings.addRubble({ ...source.options, origin: min, size, cells: grid }, hulls);
+    const made = buildings.addRubble({ ...source.options, origin: min, size, cells: grid }, hulls);
+    inherit(made.structure, { source: structure, cells: from, turn });
   }
 
   /** Turns a sleeping Fragment into Rubble, snapping its rotation to the nearest axis-aligned one. */

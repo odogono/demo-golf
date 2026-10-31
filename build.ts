@@ -7,7 +7,7 @@ const workers = await Bun.build({
   entrypoints: WORKERS,
   outdir: "./dist",
   target: "browser",
-  minify: true,
+  minify: process.env.GOLF_MINIFY !== "0",
   sourcemap: "linked",
   naming: "[name].js",
 });
@@ -23,7 +23,7 @@ const result = await Bun.build({
   entrypoints: ["./public/index.html"],
   outdir: "./dist",
   target: "browser",
-  minify: true,
+  minify: process.env.GOLF_MINIFY !== "0",
   sourcemap: "linked",
   // GitHub Pages serves the build from /demo-golf/ (.github/workflows/pages.yml).
   publicPath: process.env.GOLF_BASE,

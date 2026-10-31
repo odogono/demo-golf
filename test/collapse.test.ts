@@ -9,6 +9,8 @@ import type { Hit } from "../src/damage/damage";
 import { createDebris } from "../src/damage/debris";
 import { createCrashcatWorld } from "../src/physics/crashcat";
 import { seeded } from "../src/random";
+import { trimmedCells } from "../src/fx/trim";
+import { createStructure } from "../src/structure/structure";
 
 const DT = 1 / 60;
 
@@ -284,5 +286,28 @@ describe("Rubble from a turned piece", () => {
       checked++;
     }
     expect(checked).toBeGreaterThan(50);
+
+    // Its meshes are the standing Cells' meshes turned: the same surface as
+    // cutting its turned trims afresh would give, in a copy with no source.
+    const fresh = trimmedCells(createStructure(rubble!.options));
+    // Its area and area-weighted centre: slivers CSG leaves behind have no area, so they don't count.
+    const surface = (p: Float32Array) => {
+      let area = 0;
+      const centre: Vec3 = [0, 0, 0];
+      for (let t = 0; t < p.length; t += 9) {
+        const a = vec3.subtract(vec3.create(), [p[t + 3]!, p[t + 4]!, p[t + 5]!], [p[t]!, p[t + 1]!, p[t + 2]!]);
+        const b = vec3.subtract(vec3.create(), [p[t + 6]!, p[t + 7]!, p[t + 8]!], [p[t]!, p[t + 1]!, p[t + 2]!]);
+        const da = vec3.length(vec3.cross(a, a, b)) / 2;
+        area += da;
+        for (let k = 0; k < 3; k++) centre[k]! += (da * (p[t + k]! + p[t + 3 + k]! + p[t + 6 + k]!)) / 3;
+      }
+      return [area, ...centre.map((c) => c / area)];
+    };
+    const inherited = trimmedCells(structure);
+    expect(inherited.size).toBe(fresh.size);
+    for (const [i, mesh] of inherited) {
+      const want = surface(fresh.get(i)!.position);
+      surface(mesh.position).forEach((v, k) => expect(v).toBeCloseTo(want[k]!, 1));
+    }
   });
 });
