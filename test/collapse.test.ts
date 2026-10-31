@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { Vec3 } from "math";
 import { createBuildings, inlineStructures } from "../src/damage/buildings";
 import { quat, vec3 } from "math";
+import { structureColliders } from "../src/structure/colliders";
 import { applyTurn, createCollapse, DEFAULT_COLLAPSE, floorFall, nearestUpright, turnTrim, type Turn } from "../src/damage/collapse";
 import { trimHullPoints, type Trim } from "../src/structure/blueprint";
 import type { Hit } from "../src/damage/damage";
@@ -260,5 +261,26 @@ describe("Rubble from a turned piece", () => {
     // Lying down, its round pieces now curve about a horizontal axis.
     const axes = new Set([...rubble!.structure.trims.values()].flat().map((t) => t.axis ?? "y"));
     expect(axes.has("x") || axes.has("z")).toBe(true);
+
+    // Its colliders reuse the standing Cells' hulls, rotated: the same shapes as its turned trims.
+    const { structure } = rubble!;
+    let checked = 0;
+    for (const child of structureColliders(structure)) {
+      if (child.shape.kind !== "convexHull") continue;
+      expect(child.rotation).toBeDefined();
+      const [x, y, z] = child.position.map((v) => v - 0.5) as Vec3;
+      const want: Vec3[] = [];
+      for (const trim of structure.trims.get(structure.index(x, y, z))!) {
+        const points = trimHullPoints(x, y, z, trim);
+        for (let k = 0; k < points.length; k += 3) want.push([points[k]!, points[k + 1]!, points[k + 2]!]);
+      }
+      const { points } = child.shape;
+      for (let k = 0; k < points.length; k += 3) {
+        const p = vec3.transformQuat(vec3.create(), [points[k]!, points[k + 1]!, points[k + 2]!], child.rotation!);
+        expect(Math.min(...want.map((w) => vec3.distance(w, p)))).toBeLessThan(1e-3);
+      }
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(50);
   });
 });

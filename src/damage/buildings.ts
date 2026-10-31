@@ -1,6 +1,6 @@
 import { vec3, type Vec3 } from "math";
 import type { BodyId, PhysicsWorld } from "../physics/PhysicsWorld";
-import { structureColliders } from "../structure/colliders";
+import { shareHulls, structureColliders, type CellHulls } from "../structure/colliders";
 import { splitFoundation, type Foundation } from "../structure/foundation";
 import { createStructure, type Structure, type StructureOptions } from "../structure/structure";
 import { createStructureHost, type StructureReply, type StructureRequest } from "../structure/structure-host";
@@ -66,9 +66,10 @@ export function createBuildings(world: PhysicsWorld, port: StructurePort, option
           });
   }
 
-  function add(opts: StructureOptions, rubble: boolean): Building {
+  function add(opts: StructureOptions, rubble: boolean, hulls?: Map<number, CellHulls>): Building {
     const id = buildings.length;
     const building: Building = { id, options: opts, structure: createStructure(opts), body: undefined, rubble };
+    if (hulls) shareHulls(building.structure, hulls);
     port.send({ type: "create", id, options: opts });
     rebuildBody(building);
     buildings.push(building);
@@ -107,10 +108,11 @@ export function createBuildings(world: PhysicsWorld, port: StructurePort, option
 
     /**
      * Adds a Building made from Rubble at rest, so it can take Blasts like any
-     * other. `drainAdded` hands it to whatever draws Buildings.
+     * other. `drainAdded` hands it to whatever draws Buildings. `hulls` are
+     * its trimmed Cells' colliders, kept from the Cells it came from.
      */
-    addRubble(opts: StructureOptions): Building {
-      const building = add(opts, true);
+    addRubble(opts: StructureOptions, hulls?: Map<number, CellHulls>): Building {
+      const building = add(opts, true, hulls);
       added.push(building);
       return building;
     },

@@ -1,4 +1,4 @@
-import type { Vec3 } from "math";
+import type { Quat, Vec3 } from "math";
 import type { CompoundChild } from "../physics/PhysicsWorld";
 import { trimHullPoints } from "./blueprint";
 import type { Structure } from "./structure";
@@ -6,19 +6,37 @@ import type { Structure } from "./structure";
 /** Thinner than this in any direction, a trimmed piece gets no collider. */
 const THIN = 0.05;
 
-/** Each Structure's hull points per trimmed Cell, worked out once: the same arrays are reused so the physics adapter can reuse their shapes. */
-const hulls = new WeakMap<Structure, Map<number, number[][]>>();
+/**
+ * A trimmed Cell's hull points, about its centre, one array per piece, turned
+ * by `rotation` if set: Rubble keeps the hulls of the Cells it came from.
+ */
+export type CellHulls = { pieces: number[][]; rotation?: Quat };
 
-function hullsOf(structure: Structure): Map<number, number[][]> {
+/** Each Structure's hulls per trimmed Cell, worked out once: the same arrays are reused so the physics adapter can reuse their shapes. */
+const hulls = new WeakMap<Structure, Map<number, CellHulls>>();
+
+function hullsOf(structure: Structure): Map<number, CellHulls> {
   let cells = hulls.get(structure);
-  if (cells) return cells;
-  cells = new Map();
+  if (!cells) hulls.set(structure, (cells = new Map()));
   for (const [i, pieces] of structure.trims) {
+    if (cells.has(i)) continue;
     const [x, y, z] = structure.coords(i);
-    cells.set(i, pieces.map((piece) => trimHullPoints(x, y, z, piece)).filter(thick));
+    cells.set(i, { pieces: pieces.map((piece) => trimHullPoints(x, y, z, piece)).filter(thick) });
   }
-  hulls.set(structure, cells);
   return cells;
+}
+
+/** The hulls of Cell `i` of `structure`, if it is trimmed. */
+export function cellHulls(structure: Structure, i: number): CellHulls | undefined {
+  return hullsOf(structure).get(i);
+}
+
+/**
+ * Gives a new Structure's Cells hulls already made, such as Rubble taking its
+ * source Cells' hulls, turned. Building a hull is slow; reusing one is not.
+ */
+export function shareHulls(structure: Structure, cells: Map<number, CellHulls>) {
+  hulls.set(structure, new Map(cells));
 }
 
 /**
@@ -34,11 +52,13 @@ export function structureColliders(structure: Structure, alive: Uint8Array = str
   const [nx, ny, nz] = structure.size;
   const children: CompoundChild[] = [];
   const box = (i: number) => alive[i] && !structure.trims.has(i);
-  for (const [i, pieces] of hullsOf(structure)) {
+  for (const [i, { pieces, rotation }] of hullsOf(structure)) {
     if (!alive[i]) continue;
     const [x, y, z] = structure.coords(i);
     for (const points of pieces) {
-      children.push({ shape: { kind: "convexHull", points }, position: [x + 0.5, y + 0.5, z + 0.5] });
+      const child: CompoundChild = { shape: { kind: "convexHull", points }, position: [x + 0.5, y + 0.5, z + 0.5] };
+      if (rotation) child.rotation = rotation;
+      children.push(child);
     }
   }
   for (let y = 0; y < ny; y++) {

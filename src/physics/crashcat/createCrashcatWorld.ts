@@ -42,8 +42,23 @@ const MOTION: Record<MotionKind, MotionType> = {
   kinematic: MotionType.KINEMATIC,
 };
 
-/** Hulls are slow to build, so one built from the same points array is reused. */
+/**
+ * Hulls are slow to build, so each is reused: by its points array, and by the
+ * points themselves, since a Cell's hull is local to the Cell and a ring of
+ * trimmed Cells repeats the same few shapes up every layer and into its Rubble.
+ */
 const hullShapes = new WeakMap<number[], Shape>();
+const hullsByPoints = new Map<string, Shape>();
+
+function hullShape(points: number[]): Shape {
+  let hull = hullShapes.get(points);
+  if (hull) return hull;
+  const key = points.map((p) => Math.round(p * 1e4)).join(",");
+  hull = hullsByPoints.get(key);
+  if (!hull) hullsByPoints.set(key, (hull = convexHull.create({ positions: points, convexRadius: 0.02 })));
+  hullShapes.set(points, hull);
+  return hull;
+}
 
 function createShape(desc: ShapeDesc, motion: MotionKind): Shape {
   switch (desc.kind) {
@@ -53,9 +68,7 @@ function createShape(desc: ShapeDesc, motion: MotionKind): Shape {
       return sphere.create({ radius: desc.radius });
     case "convexHull":
       // A small convex radius, so thin pieces such as a railing keep their shape.
-      let hull = hullShapes.get(desc.points);
-      if (!hull) hullShapes.set(desc.points, (hull = convexHull.create({ positions: desc.points, convexRadius: 0.02 })));
-      return hull;
+      return hullShape(desc.points);
     case "compound": {
       const children = desc.children.map((child) => ({
         shape: createShape(child.shape, motion),
